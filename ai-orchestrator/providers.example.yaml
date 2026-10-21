@@ -1,0 +1,43 @@
+# Copy to .system/providers.yaml. Each work requires explicit chain acceptance.
+roles:
+  author:
+    - provider: codex
+      profile: WRITE
+    - provider: claude
+      profile: WRITE
+  reviewer:
+    - provider: claude
+      profile: READ_ONLY
+    - provider: codex
+      profile: READ_ONLY
+require_handover_approval: false
+# Panel ceiling: providers the panel may pick per role (the ceiling). Absent = only the default team above.
+# allowed:
+#   author: [codex, claude]
+#   reviewer: [claude, codex]
+# Accounts: up to 4 links per role; a link may name an account (its own .system/codex-home-<account>):
+#   author:
+#     - provider: codex
+#       profile: WRITE
+#     - {provider: codex, account: work, profile: WRITE}   # same as `provider: codex@work` (example account names)
+#     - provider: claude
+#       profile: WRITE
+# Effort: effort for Claude ({provider: claude, model: opus, effort: high} or claude/opus~high); `allowed`
+# entries without a model/effort are wildcards for the catalog, e.g. allowed: {author: [claude, agy@acct1], reviewer: [claude]}.
+# agy accounts: agy needs a model; each account has its own .system/agy-home-<account>.
+#   author:
+#     - {provider: claude, profile: WRITE}
+#     - {provider: agy, account: acct1, model: claude-sonnet-4-6, profile: WRITE}
+#     - {provider: agy, account: acct1, model: gemini-3.8-flash-high, profile: WRITE}
+#     - {provider: agy, account: acct2, model: gemini-3.8-flash-high, profile: WRITE}
+#   reviewer:
+#     - {provider: agy, account: acct2, model: gemini-3.8-flash-high, profile: READ_ONLY}
+#     - {provider: claude, profile: READ_ONLY}
+# Total extra contexts per step, shared across the provider chain (0 disables).
+max_context_continuations: 3
+# Turn loop (opt-in): turn loop author → reviewer until the reviewer passes or a budget ends.
+# Present = new work messages run in turns (policy version 3; the panel asks for re-acceptance).
+# Absent = the fixed author → reviewer → author flow.
+# loop:
+#   max_turns: 3            # 1..5
+#   max_active_minutes: 30  # 5..120, active execution only (not queue/waiting/paused)

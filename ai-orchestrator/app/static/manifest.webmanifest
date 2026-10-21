@@ -1,0 +1,33 @@
+{
+  "name": "PromptBridge",
+  "short_name": "PromptBridge",
+  "description": "PromptBridge: görev ver, çalışmaları izle, dosya onaylarını yanıtla",
+  "start_url": "/ui/",
+  "scope": "/ui/",
+  "display": "standalone",
+  "background_color": "#151a18",
+  "theme_color": "#151a18",
+  "icons": [
+    {
+      "src": "/ui/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "/ui/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/ui/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/ui/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

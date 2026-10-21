@@ -1,0 +1,29 @@
+# macOS / editors
+.DS_Store
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+
+# Node / UI build cache
+node_modules/
+*.tsbuildinfo
+apps/mac/build/
+
+# Runtime state — never commit (SQLite DB + WAL, logs, local provider policy, locks)
+ai-orchestrator/.system/
+*.db
+*.db-wal
+*.db-shm
+*.lock
+*.log
+
+# Runtime message files (folders kept via .gitkeep)
+ai-orchestrator/agents/**/*.md
+ai-orchestrator/archive/**/*.md
+ai-orchestrator/queue/*
+!**/.gitkeep
+
+# Local planning and collaboration records
+_isbirligi/

@@ -1,0 +1,260 @@
+<!doctype html>
+<!--
+  Conductor — modern panel yeniden tasarımı (F2). Yerelde aç: bu dosyaya çift tıkla
+  (giriş gerektirmez). Stil: conductor.css (aynı klasör).
+
+  ÖNEMLİ: Buradaki oturumlar, adımlar, denemeler, araç çağrıları ve canlı çıktı
+  ÖRNEK VERİDİR — yalnız tasarımı göstermek için. Gerçek panelde bunların hepsi
+  backend olaylarından (session_events / /api/sessions) gelmelidir; hiçbir durum
+  veya araç çağrısı sabit/uydurma gösterilmez.
+
+  Uyarlama: conductor.css'i ui/src/styles/ altına al; aşağıdaki sınıf/markup
+  desenlerini mevcut React bileşenlerine (App.tsx, WorkPanel.tsx, EnvelopeDetail…)
+  gerçek veriyle bağlayarak uygula. İşlevler korunur; yalnız sunum değişir.
+-->
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Conductor — Panel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="conductor.css">
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M4 18V6M20 18V6M9 15V9M15 15V9M12 20V4"/></svg></span>
+      Conductor
+    </div>
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-view="work">Çalışmalar</button>
+      <button role="tab" aria-selected="false" data-view="bridge">Dosya onayları</button>
+    </div>
+    <div class="top-right">
+      <span class="host mono">yerel · 127.0.0.1:8765</span>
+      <span class="live"><span class="dot"></span>Canlı</span>
+      <button class="icon-btn" id="theme" title="Tema" aria-label="Tema değiştir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg></button>
+    </div>
+  </header>
+
+  <div class="body">
+    <aside class="sidebar">
+      <div class="side-head">
+        <button class="newwork"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Yeni çalışma</button>
+      </div>
+      <div class="side-label">Çalışmalar</div>
+      <div class="session-list">
+        <button class="session sel">
+          <span class="nm">acme-dashboard</span>
+          <span class="pill run"><span class="d"></span>Çalışıyor</span>
+          <span class="tm">14:32 · 3 adım</span>
+        </button>
+        <button class="session">
+          <span class="nm">billing-service</span>
+          <span class="pill ok"><span class="d"></span>Tamamlandı</span>
+          <span class="tm">13:05</span>
+        </button>
+        <button class="session">
+          <span class="nm">infra-scripts</span>
+          <span class="pill warn"><span class="d"></span>Kota bekleniyor</span>
+          <span class="tm">11:40</span>
+        </button>
+        <button class="session">
+          <span class="nm">marketing-site</span>
+          <span class="pill idle"><span class="d"></span>Kurtarma incelemesi</span>
+          <span class="tm">Dün · 22:18</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- WORK VIEW -->
+    <main class="main" id="view-work">
+      <div class="pane">
+        <div class="run-head">
+          <div>
+            <h1>acme-dashboard</h1>
+            <div class="sub">
+              <span class="pill run"><span class="d"></span>Çalışıyor · adım 3/3</span>
+              <span class="path">~/Projeler/acme-dashboard</span>
+            </div>
+          </div>
+          <span class="spacer"></span>
+          <button class="btn danger">Durdur</button>
+        </div>
+
+        <section class="card">
+          <div class="card-h">
+            <h2>Sağlayıcı zinciri</h2>
+            <span class="spacer"></span>
+            <span class="accepted"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Bu çalışma için kabul edildi · donduruldu</span>
+          </div>
+          <div class="card-b chains">
+            <div class="chain-row">
+              <span class="chip author">Yazar · yazma</span>
+              <span class="flow"><span class="prov"><span class="g codex">C</span>codex</span><span class="arr">→</span><span class="prov"><span class="g claude">C</span>claude</span></span>
+            </div>
+            <div class="chain-row">
+              <span class="chip reviewer">İnceleyici · salt okunur</span>
+              <span class="flow"><span class="prov"><span class="g claude">C</span>claude</span><span class="arr">→</span><span class="prov"><span class="g codex">C</span>codex</span></span>
+            </div>
+            <p class="chain-note">Yalnız <strong>doğrulanmış kota</strong> hatasında sıradaki sağlayıcı aynı rol profiliyle devralır. Her sağlayıcı adım başına bir kez denenir.</p>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-h"><h2>Çalışma akışı</h2></div>
+          <div class="card-b">
+            <div class="timeline">
+              <div class="step done">
+                <span class="node"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+                <div class="step-head">
+                  <span class="t">1 · Yazar uygular</span>
+                  <span class="chip author">yazma</span>
+                  <span class="pill ok"><span class="d"></span>Tamamlandı</span>
+                </div>
+                <div class="attempts">
+                  <div class="attempt"><span class="no">deneme 1</span><span class="prov"><span class="g codex">C</span>codex</span><span class="pill ok"><span class="d"></span>Tamamlandı</span></div>
+                </div>
+                <p class="step-out">API istemcisine yeniden deneme + hata yüzeyi eklendi; <span class="mono">src/api.ts</span>, <span class="mono">src/hooks/useRetry.ts</span> güncellendi.</p>
+              </div>
+
+              <div class="step done">
+                <span class="node"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+                <div class="step-head">
+                  <span class="t">2 · İnceleyici değerlendirir</span>
+                  <span class="chip reviewer">salt okunur</span>
+                  <span class="pill ok"><span class="d"></span>Tamamlandı</span>
+                </div>
+                <div class="attempts">
+                  <div class="attempt"><span class="no">deneme 1</span><span class="prov"><span class="g claude">C</span>claude</span><span class="pill ok"><span class="d"></span>Tamamlandı</span></div>
+                </div>
+                <p class="step-out">Geri alma yolunda <span class="mono">error.cause</span> yutuluyor; iki test eksik. Somut düzeltmeler önerildi.</p>
+              </div>
+
+              <div class="step active">
+                <span class="node"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 6v6l4 2"/><circle cx="12" cy="12" r="9"/></svg></span>
+                <div class="step-head">
+                  <span class="t">3 · Yazar düzeltir</span>
+                  <span class="chip author">yazma</span>
+                  <span class="pill run"><span class="d"></span>Çalışıyor</span>
+                </div>
+                <div class="handover">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h11l-3-3M20 17H9l3 3"/></svg>
+                  Devir · <span class="prov"><span class="g codex">C</span>codex</span> → <span class="prov"><span class="g claude">C</span>claude</span> · doğrulanmış kota sınırı · süreç temizliği onaylandı, kilit korundu
+                </div>
+                <div class="attempts">
+                  <div class="attempt"><span class="no">deneme 1</span><span class="prov"><span class="g codex">C</span>codex</span><span class="pill warn"><span class="d"></span>Kota doldu</span><span class="mono" style="color:var(--faint);font-size:11.5px">usageLimitExceeded</span></div>
+                  <div class="attempt"><span class="no">deneme 2</span><span class="prov"><span class="g claude">C</span>claude</span><span class="pill run"><span class="d"></span>Çalışıyor</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-h">
+            <h2>Canlı çıktı</h2><span class="spacer"></span>
+            <span class="live"><span class="dot"></span>akış açık</span>
+          </div>
+          <div class="feed">
+            <div class="evt">
+              <span class="av claude">C</span>
+              <div><div class="who">claude <span>yazar · yazma · devraldı</span></div>
+                <div class="msg">Codex'in tamamladığı işi inceledim. İnceleyici notundaki iki eksiği kapatıyorum: <span class="mono">error.cause</span> zincirini koru, kapsam testlerini ekle.</div>
+              </div>
+            </div>
+            <div class="evt">
+              <span class="av claude">C</span>
+              <div><div class="who">claude <span>Read</span></div>
+                <div class="tool">Read  src/api.ts  (142 satır)
+Read  src/hooks/useRetry.ts  (61 satır)</div>
+              </div>
+            </div>
+            <div class="evt">
+              <span class="av claude">C</span>
+              <div><div class="who">claude <span>Edit</span></div>
+                <div class="tool">Edit  src/hooks/useRetry.ts
+  - throw new Error('retry failed')
+  + throw new Error('retry failed', { cause: lastError })</div>
+              </div>
+            </div>
+            <div class="evt handover">
+              <span class="av sys" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h11l-3-3M20 17H9l3 3"/></svg></span>
+              <div><div class="who">Devir · codex → claude</div>
+                <div class="msg">Codex kotası doldu (<span class="mono">usageLimitExceeded</span>). Süreç grubu sonlandırması doğrulandı; devir paketi kaydedildi; claude aynı yazar profiliyle devraldı.</div>
+              </div>
+            </div>
+            <div class="evt">
+              <span class="av codex">C</span>
+              <div><div class="who">codex <span>yazar · yazma · deneme 1</span></div>
+                <div class="msg">Retry sarmalayıcısını yazıyorum ve hata yüzeyini bağlıyorum…<span class="cursor"></span></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <p class="hint"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg>Klasör kilidi yalnız Conductor çalışmalarını kapsar; dış editörleri engellemez. Değişiklik kaydı kanıttır, koruma değildir.</p>
+      </div>
+    </main>
+
+    <!-- BRIDGE VIEW -->
+    <main class="main" id="view-bridge" hidden>
+      <div class="env-detail">
+        <div class="filters">
+          <button class="on">Tümü</button><button>Bekleyen (1)</button><button>İletildi (2)</button><button>Reddedilen</button>
+        </div>
+        <div class="env-head">
+          <h1>Kullanıcı auth akışı taslağı</h1>
+          <span class="pill warn"><span class="d"></span>Onay bekliyor</span>
+          <span class="spacer"></span>
+          <span class="prov"><span class="g codex" style="background:#10a37f">G</span>chatgpt</span><span class="arr">→</span><span class="prov"><span class="g claude">C</span>claude</span>
+        </div>
+        <div class="mono" style="font-size:12px;color:var(--faint)">msg_20260924T0912_a1b2 · spec · 4.2 KB · sha 9f2c…e10</div>
+
+        <div class="seg"><button class="on">Önizleme</button><button>Düzenle</button><button>Geçmiş</button></div>
+
+        <div class="card"><div class="card-b preview">
+          <h3>Auth akışı — taslak</h3>
+          <p>Oturum açma üç adımda: e-posta doğrulama, TOTP, cihaz güveni. Aşağıdaki durum makinesi <code>PENDING → VERIFIED → TRUSTED</code> geçişlerini kapsar; başarısız TOTP en fazla <code>3</code> kez denenir, sonra <code>LOCKED</code>.</p>
+          <p style="margin-top:10px">Token yenileme sunucu tarafında <code>rotate-on-use</code> ile yapılır; istemci yalnızca kısa ömürlü erişim token'ı tutar.</p>
+        </div></div>
+
+        <div class="env-actions">
+          <button class="btn approve"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:5px"><path d="M20 6 9 17l-5-5"/></svg>Onayla ve ilet</button>
+          <button class="btn">Düzenle</button>
+          <button class="btn danger">Reddet</button>
+        </div>
+
+        <section class="card"><div class="card-h"><h2>Geçmiş</h2></div><div class="card-b hist">
+          <div class="hrow"><span class="hd" style="background:var(--muted)"></span><span class="ht">Yakalandı <span class="hx">chatgpt/outbox</span></span><span class="hx">09:12:04</span></div>
+          <div class="hrow"><span class="hd" style="background:var(--warn)"></span><span class="ht">Kuyruğa alındı <span class="hx">PENDING_APPROVAL</span></span><span class="hx">09:12:04</span></div>
+        </div></section>
+
+        <p class="hint"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg>Teslim yalnız <strong>İletildi</strong>'dir — hedef asistanın okuduğu ayrıca kanıtlanır.</p>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>
+(function(){
+  var tabs=document.querySelectorAll('.tabs button');
+  var views={work:document.getElementById('view-work'),bridge:document.getElementById('view-bridge')};
+  tabs.forEach(function(b){b.addEventListener('click',function(){
+    tabs.forEach(function(x){x.setAttribute('aria-selected',x===b)});
+    for(var k in views){views[k].hidden=(k!==b.dataset.view)}
+  })});
+  var root=document.documentElement,tb=document.getElementById('theme');
+  tb.addEventListener('click',function(){
+    var d=root.getAttribute('data-theme');
+    if(!d){d=matchMedia('(prefers-color-scheme:dark)').matches?'light':'dark';}
+    else{d=d==='dark'?'light':'dark';}
+    root.setAttribute('data-theme',d);
+  });
+})();
+</script>
+</body>
+</html>

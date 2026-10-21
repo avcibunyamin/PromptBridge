@@ -1,0 +1,7 @@
+watchdog
+fastapi
+uvicorn[standard]
+httpx
+PyYAML>=6.0,<7
+psutil>=6,<8
+pywebpush>=2,<3

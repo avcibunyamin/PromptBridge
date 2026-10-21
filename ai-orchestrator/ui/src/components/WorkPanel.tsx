@@ -2,6 +2,7 @@ import { canCommand, mobile } from '../mobile'
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { ChevronLeft, Pin, Plus } from 'lucide-react'
 import { deleteWork, isolationRemove, listWorks, listLegacySessions, patchWork, type Work, type WorksPage, type LegacySession } from '../api'
+import { locale, t } from '../i18n'
 import { deleteWorkErrorMessage, loadSettings, PINNED_WORKS_LIMIT, saveSettings, sortPinnedWorks, togglePinnedWork, workMenuItems, type WorkMenuAction } from '../settings'
 import { Modal, Pill } from './work/shared'
 import { NewWorkForm } from './work/NewWorkForm'
@@ -19,13 +20,13 @@ function parseRoute():Route{
 const hashOf=(r:Route)=>r.kind==='home'?'#/':r.kind==='new'?'#/new':`#/${r.kind==='work'?'works':'sessions'}/${encodeURIComponent(r.id)}`
 
 const MENU_LABELS: Record<WorkMenuAction, string> = {
-  pin: 'Sabitle',
-  unpin: 'Sabitlemeyi kaldır',
-  rename: 'Yeniden adlandır',
-  archive: 'Arşivle',
-  unarchive: 'Arşivden çıkar',
-  remove_isolation: 'Kopyayı kaldır',
-  delete: 'Sil',
+  pin: t('shell.work.menu.pin'),
+  unpin: t('shell.work.menu.unpin'),
+  rename: t('shell.work.menu.rename'),
+  archive: t('shell.work.menu.archive'),
+  unarchive: t('shell.work.menu.unarchive'),
+  remove_isolation: t('shell.work.menu.removeIsolation'),
+  delete: t('shell.work.menu.delete'),
 }
 
 /** Merge a fresh first page into what is loaded: the keyset cursor of later pages stays valid under inserts. */
@@ -119,7 +120,7 @@ export function WorkPanel({head,foot,top,override,onOpen}:{head?:ReactNode;foot?
   async function onTogglePin(w:Work){
     setMenuId(null)
     if(!pinnedIds.includes(w.id)&&pinnedIds.length>=PINNED_WORKS_LIMIT){
-      setListError(`En fazla ${PINNED_WORKS_LIMIT} çalışma sabitlenebilir.`)
+      setListError(t('shell.work.pinLimit',{limit:PINNED_WORKS_LIMIT}))
       return
     }
     const prev=pinnedIds
@@ -141,15 +142,20 @@ export function WorkPanel({head,foot,top,override,onOpen}:{head?:ReactNode;foot?
     setRenameTitle(w.title)
   }
 
+  function closeRename(id:string){
+    setRenamingId(null)
+    requestAnimationFrame(()=>document.querySelector<HTMLElement>(`[data-work-id="${id}"]`)?.focus())
+  }
+
   async function submitRename(w:Work){
     const title=renameTitle.trim()
-    if(!title){setRenamingId(null);return}
+    if(!title){closeRename(w.id);return}
     setRenameBusy(true)
     try{
       const rev=works.find(x=>x.id===w.id)?.revision??w.revision
       const updated=await patchWork(w.id,{expected_revision:rev,title})
       setWorks(ws=>ws.map(x=>x.id===w.id?updated:x))
-      setRenamingId(null)
+      closeRename(w.id)
       setListError('')
       void refreshWorks()
     }catch(e){
@@ -248,88 +254,88 @@ export function WorkPanel({head,foot,top,override,onOpen}:{head?:ReactNode;foot?
   // ≤600px shows one pane at a time: the list on home, otherwise the open item with a way back (CSS only elsewhere)
   return <div className="body work-layout" data-pane={!override&&route.kind==='home'?'list':'detail'}><aside className="sidebar work-sidebar">
     {head}
-    <div className="side-head">{canCommand()&&<button className="newwork" onClick={()=>go({kind:'new'})}><Plus size={16} aria-hidden/>Yeni çalışma</button>}</div>
-    <p className="nav-label d-only">SON ÇALIŞMALAR</p>
-    <div className="side-filter" role="group" aria-label="Çalışma filtresi">
-      <button aria-pressed={!archived} onClick={()=>setArchived(false)}>Aktif{page?` (${page.counts.active})`:''}</button>
-      <button aria-pressed={archived} onClick={()=>setArchived(true)}>Arşiv{page?` (${page.counts.archived})`:''}</button>
+    <div className="side-head">{canCommand()&&<button className="newwork" onClick={()=>go({kind:'new'})}><Plus size={16} aria-hidden/>{t('shell.work.new')}</button>}</div>
+    <p className="nav-label d-only">{t('shell.work.recentUpper')}</p>
+    <div className="side-filter" role="group" aria-label={t('shell.work.filterLabel')}>
+      <button aria-pressed={!archived} onClick={()=>setArchived(false)}>{t('shell.work.filterActive')}{page?` (${page.counts.active})`:''}</button>
+      <button aria-pressed={archived} onClick={()=>setArchived(true)}>{t('shell.work.filterArchived')}{page?` (${page.counts.archived})`:''}</button>
     </div>
     {listError&&<p className="side-error" role="alert">{listError}</p>}
-    <nav className="session-list" aria-label="Çalışmalar">
+    <nav className="session-list" aria-label={t('shell.work.listLabel')}>
       {orderedWorks.map(w=>{
         const sel=!override&&route.kind==='work'&&route.id===w.id   // another page open: nothing is selected
         const pinned=pinnedIds.includes(w.id)
         const actions=workMenuItems(w,{pinned,mobile:mobile.active,canCommand:allowCommand})
         const isRenaming=renamingId===w.id
         const statusBadge=w.blocked_reason==='needs_review_decision'
-          ?<span className="pill warn"><span className="d" aria-hidden="true"/>Doğrulanmadı — kararınız bekleniyor</span>
+          ?<span className="pill warn"><span className="d" aria-hidden="true"/>{t('shell.work.statusNeedsDecision')}</span>
           :w.account_wait
-          ?<span className="pill warn"><span className="d" aria-hidden="true"/>Hesap bekliyor</span>
-          :w.latest_session?<Pill status={w.latest_session.status}/>:<span className="pill idle"><span className="d" aria-hidden="true"/>Yürütme yok</span>
-        const timeLine=<span className="tm">{new Date(w.created_at).toLocaleString('tr-TR')}{w.pending_messages?` · ${w.pending_messages} sırada`:''}</span>
+          ?<span className="pill warn"><span className="d" aria-hidden="true"/>{t('shell.work.statusAccountWait')}</span>
+          :w.latest_session?<Pill status={w.latest_session.status}/>:<span className="pill idle"><span className="d" aria-hidden="true"/>{t('shell.work.statusNoRun')}</span>
+        const timeLine=<span className="tm">{new Date(w.created_at).toLocaleString(locale)}{w.pending_messages?t('shell.work.queuedSuffix',{count:w.pending_messages}):''}</span>
         return <div key={w.id} className={`session-row ${sel?'sel':''}`}>
           {isRenaming
             ?<div className={`session ${sel?'sel':''}`}>
-              <input ref={renameInputRef} className="session-rename" aria-label="Çalışma adı" value={renameTitle} disabled={renameBusy}
+              <input ref={renameInputRef} className="session-rename" aria-label={t('shell.work.nameLabel')} value={renameTitle} disabled={renameBusy}
                 onChange={e=>setRenameTitle(e.target.value)}
                 onKeyDown={e=>{
                   if(e.key==='Enter'){e.preventDefault();e.stopPropagation();void submitRename(w)}
-                  else if(e.key==='Escape'){e.preventDefault();e.stopPropagation();setRenamingId(null)}
+                  else if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closeRename(w.id)}
                 }}/>
               {statusBadge}
               {timeLine}
             </div>
-            :<button aria-pressed={sel} className={`session ${sel?'sel':''}`} onClick={()=>go({kind:'work',id:w.id})}>
-              <span className="nm">{pinned&&<Pin size={12} className="pin-mark" aria-label="Sabitlendi"/>}{w.title}</span>
+            :<button data-work-id={w.id} aria-pressed={sel} className={`session ${sel?'sel':''}`} onClick={()=>go({kind:'work',id:w.id})}>
+              <span className="nm">{pinned&&<Pin size={12} className="pin-mark" aria-label={t('shell.work.pinned')}/>}{w.title}</span>
               {statusBadge}
               {timeLine}
             </button>}
-          {actions.length>0&&<button type="button" className="session-more" aria-label={`${w.title} — çalışma menüsü`} aria-haspopup="menu"
+          {actions.length>0&&<button type="button" className="session-more" aria-label={t('shell.work.menuForWork',{title:w.title})} aria-haspopup="menu"
             aria-expanded={menuId===w.id} onClick={e=>{e.stopPropagation();setMenuId(cur=>cur===w.id?null:w.id)}}>⋯</button>}
-          {actions.length>0&&menuId===w.id&&<div ref={menuRef} role="menu" aria-label="Çalışma menüsü" className="work-menu" onKeyDown={onMenuKeyDown}>
+          {actions.length>0&&menuId===w.id&&<div ref={menuRef} role="menu" aria-label={t('shell.work.menuLabel')} className="work-menu" onKeyDown={onMenuKeyDown}>
             {actions.map(act=><button key={act} type="button" role="menuitem" className={act==='delete'?'danger':undefined}
               onClick={e=>{e.stopPropagation();onMenuAction(w,act)}}>{MENU_LABELS[act]}</button>)}
           </div>}
         </div>})}
-      {page&&!works.length&&<p className="empty-list">{archived?'Arşivde çalışma yok.':<>Henüz bir çalışma yok.<br/>İlk görevinizle başlayın.</>}</p>}
-      {!page&&!listError&&<p className="loading">Yükleniyor…</p>}
-      {page?.next_cursor&&<button className="btn small more" disabled={loadingMore} onClick={()=>void moreWorks()}>Daha fazla</button>}
+      {page&&!works.length&&<p className="empty-list">{archived?t('shell.work.emptyArchived'):<>{t('shell.work.emptyActiveLine1')}<br/>{t('shell.work.emptyActiveLine2')}</>}</p>}
+      {!page&&!listError&&<p className="loading">{t('shell.loading')}</p>}
+      {page?.next_cursor&&<button className="btn small more" disabled={loadingMore} onClick={()=>void moreWorks()}>{t('shell.work.more')}</button>}
     </nav>
     <details className="legacy" open={!override&&route.kind==='session'}>
-      <summary className="side-label">Önceki yürütmeler <span>{legacy.length}{legacyCursor?'+':''}</span></summary>
-      <nav className="session-list" aria-label="Önceki yürütmeler">
+      <summary className="side-label">{t('shell.work.legacyRuns')} <span>{legacy.length}{legacyCursor?'+':''}</span></summary>
+      <nav className="session-list" aria-label={t('shell.work.legacyRuns')}>
         {legacy.map(s=><button key={s.id} aria-pressed={!override&&route.kind==='session'&&route.id===s.id} className={`session ${!override&&route.kind==='session'&&route.id===s.id?'sel':''}`} onClick={()=>go({kind:'session',id:s.id})}>
-          <span className="nm">{s.workspace_path.split('/').pop()||s.workspace_path}</span><Pill status={s.status} recovered={!!s.recovered_by_human}/><span className="tm">{new Date(s.created_at).toLocaleString('tr-TR')}</span>
+          <span className="nm">{s.workspace_path.split('/').pop()||s.workspace_path}</span><Pill status={s.status} recovered={!!s.recovered_by_human}/><span className="tm">{new Date(s.created_at).toLocaleString(locale)}</span>
         </button>)}
-        {legacyPages>0&&!legacy.length&&<p className="empty-list">Çalışmaya bağlı olmayan eski yürütme yok.</p>}
-        {legacyCursor&&<button className="btn small more" disabled={loadingMore} onClick={()=>void moreLegacy()}>Daha fazla</button>}
+        {legacyPages>0&&!legacy.length&&<p className="empty-list">{t('shell.work.emptyLegacy')}</p>}
+        {legacyCursor&&<button className="btn small more" disabled={loadingMore} onClick={()=>void moreLegacy()}>{t('shell.work.more')}</button>}
       </nav>
     </details>
     {foot}
-  </aside><main className="main work-main">{top}{!override&&<button className="m-back" onClick={back}><ChevronLeft size={18} aria-hidden/>Çalışmalar</button>}
+  </aside><main className="main work-main">{top}{!override&&<button className="m-back" onClick={back}><ChevronLeft size={18} aria-hidden/>{t('shell.work.listLabel')}</button>}
     {override??<div className="pane">
-    {isNew&&!allowCommand&&<p className="empty-list">Listeden bir çalışma seçin. Bu telefon yalnız izler ve dosya onaylar; görev vermek için Mac'te bu cihaza “Görev verebilir” izni verin.</p>}
+    {isNew&&!allowCommand&&<p className="empty-list">{t('shell.work.mobileReadOnly')}</p>}
     {isNew&&allowCommand&&<NewWorkForm folders={mobile.active?[...new Set(works.map(w=>w.workspace_path))]:undefined} onCreated={id=>{void refreshWorks();go({kind:'work',id})}}/>}
     {route.kind==='work'&&<WorkView key={route.id} workId={route.id} onChange={changed}/>}
-    {route.kind==='session'&&<><p className="info-note">Önceki sürümden kalan, çalışmaya bağlı olmayan yürütme. Bu sürümde buna yeni mesaj eklenmez; durdurma, yeniden deneme ve kurtarma kontrolleri aynen geçerlidir.</p>
+    {route.kind==='session'&&<><p className="info-note">{t('shell.work.legacyInfoNote')}</p>
       <SessionView key={route.id} sessionId={route.id} onChange={()=>void refreshLegacy()}/></>}
   </div>}
-    {removingIso&&<Modal label="Kopyayı kaldır" busy={removeIsoBusy} onClose={()=>{if(!removeIsoBusy){setRemovingIso(null);setRemoveIsoError('')}}}>
-      <h3>Kopyayı kaldır</h3>
-      <p>{removingIso.title} çalışmasının ayrı kopyası kaldırılsın mı? Kopya klasörü silinir; dal ana klasöre tamamen birleşmişse o da silinir, yoksa kalır. Kaydedilmemiş değişiklik varsa reddedilir.</p>
+    {removingIso&&<Modal label={t('shell.work.menu.removeIsolation')} busy={removeIsoBusy} onClose={()=>{if(!removeIsoBusy){setRemovingIso(null);setRemoveIsoError('')}}}>
+      <h3>{t('shell.work.menu.removeIsolation')}</h3>
+      <p>{t('shell.work.removeIsoBody',{title:removingIso.title})}</p>
       {removeIsoError&&<p className="error-banner" role="alert">{removeIsoError}</p>}
       <div className="modal-actions">
-        <button type="button" className="btn" disabled={removeIsoBusy} onClick={()=>{setRemovingIso(null);setRemoveIsoError('')}}>Vazgeç</button>
-        <button type="button" className="btn danger" disabled={removeIsoBusy} onClick={()=>void confirmRemoveIsolation(removingIso)}>Kopyayı kaldır</button>
+        <button type="button" className="btn" disabled={removeIsoBusy} onClick={()=>{setRemovingIso(null);setRemoveIsoError('')}}>{t('shell.work.cancel')}</button>
+        <button type="button" className="btn danger" disabled={removeIsoBusy} onClick={()=>void confirmRemoveIsolation(removingIso)}>{t('shell.work.menu.removeIsolation')}</button>
       </div>
     </Modal>}
-    {deleting&&<Modal label="Çalışmayı sil" busy={deleteBusy} onClose={()=>{if(!deleteBusy){setDeleting(null);setDeleteError('')}}}>
-      <h3>Çalışmayı sil</h3>
-      <p>{deleting.title} silinsin mi? Listelerden kalıcı olarak kalkar; kayıtlar denetim için saklanır.</p>
+    {deleting&&<Modal label={t('shell.work.deleteTitle')} busy={deleteBusy} onClose={()=>{if(!deleteBusy){setDeleting(null);setDeleteError('')}}}>
+      <h3>{t('shell.work.deleteTitle')}</h3>
+      <p>{t('shell.work.deleteBody',{title:deleting.title})}</p>
       {deleteError&&<p className="error-banner" role="alert">{deleteError}</p>}
       <div className="modal-actions">
-        <button type="button" className="btn" disabled={deleteBusy} onClick={()=>{setDeleting(null);setDeleteError('')}}>Vazgeç</button>
-        <button type="button" className="btn danger" disabled={deleteBusy} onClick={()=>void confirmDeleteWork(deleting)}>Sil</button>
+        <button type="button" className="btn" disabled={deleteBusy} onClick={()=>{setDeleting(null);setDeleteError('')}}>{t('shell.work.cancel')}</button>
+        <button type="button" className="btn danger" disabled={deleteBusy} onClick={()=>void confirmDeleteWork(deleting)}>{t('shell.work.menu.delete')}</button>
       </div>
     </Modal>}
   </main></div>

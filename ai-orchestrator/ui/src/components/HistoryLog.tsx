@@ -1,20 +1,21 @@
 import type { HistoryEntry } from '../api'
+import { t } from '../i18n'
 
 const EVENT_LABELS: Record<string, string> = {
-  capture: 'Yakalandı',
-  enqueue: 'Kuyruğa alındı',
-  human_approve: 'Onaylandı',
-  human_reject: 'Reddedildi',
-  route: 'Yönlendirildi',
-  deliver_ok: 'İletildi',
-  deliver_err: 'Teslim hatası',
-  retry: 'Yeniden denendi',
-  escalate: 'Yükseltildi',
-  timeout: 'Zaman aşımı',
+  capture: t('bridge.event.capture'),
+  enqueue: t('bridge.event.enqueue'),
+  human_approve: t('bridge.event.human_approve'),
+  human_reject: t('bridge.event.human_reject'),
+  route: t('bridge.event.route'),
+  deliver_ok: t('bridge.event.deliver_ok'),
+  deliver_err: t('bridge.event.deliver_err'),
+  retry: t('bridge.event.retry'),
+  escalate: t('bridge.event.escalate'),
+  timeout: t('bridge.event.timeout'),
 }
 
 export function HistoryLog({ entries }: { entries: HistoryEntry[] }) {
-  if (!entries.length) return <p className="muted">Geçmiş yok.</p>
+  if (!entries.length) return <p className="muted">{t('bridge.history.empty')}</p>
   return (
     <ul className="history-list">
       {entries.map((h, i) => (

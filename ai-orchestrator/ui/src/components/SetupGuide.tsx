@@ -5,6 +5,7 @@ import { loadSettings, type SettingsView } from '../settings'
 import { allDone, hideSetup, isSetupHidden, setupSteps, type SetupErrors } from '../setupRules'
 import { api } from './work/shared'
 import type { Catalog } from './work/team'
+import { t } from '../i18n'
 
 export function SetupGuide({
   works,
@@ -89,13 +90,13 @@ export function SetupGuide({
   }
 
   return (
-    <section className="panel setup-guide" aria-label="İlk adımlar">
+    <section className="panel setup-guide" aria-label={t('shell.setup.heading')}>
       <div className="panel-heading">
         <div>
-          <p className="eyebrow">KURULUM REHBERİ</p>
-          <h2>İlk adımlar</h2>
+          <p className="eyebrow">{t('shell.setup.eyebrow')}</p>
+          <h2>{t('shell.setup.heading')}</h2>
         </div>
-        {!mobile.active&&<button type="button" className="btn small ghost" onClick={handleHide}>Şimdilik gizle</button>}
+        {!mobile.active&&<button type="button" className="btn small ghost" onClick={handleHide}>{t('shell.setup.hideForNow')}</button>}
       </div>
       <ol className="setup-list">
         {steps.map(step => (
@@ -106,36 +107,36 @@ export function SetupGuide({
               </span>
               <span className="setup-title">{step.title}</span>
               {step.error ? (
-                <span className="pill warn">okunamadı</span>
+                <span className="pill warn">{t('shell.unreadable')}</span>
               ) : step.unverified ? (
-                <span className="pill warn">Doğrulanmadı</span>
+                <span className="pill warn">{t('shell.setup.unverified')}</span>
               ) : step.done ? (
-                <span className="pill ok">Tamam</span>
+                <span className="pill ok">{t('shell.setup.done')}</span>
               ) : (
-                <span className="pill idle">Bekliyor</span>
+                <span className="pill idle">{t('shell.setup.pending')}</span>
               )}
             </div>
             {!step.error && !step.done && step.key === 'cli' && (
               <p className="small muted setup-note">
-                claude, codex, agy ya da ollama'dan birini kurun (<code className="mono">docs/KULLANIM-KILAVUZU.md</code>)
+                {t('shell.setup.cliInstallPrefix')} (<code className="mono">docs/KULLANIM-KILAVUZU.md</code>)
               </p>
             )}
             {!step.error && !step.done && step.key === 'auth' && (
               <div className="setup-actions">
                 {step.loginCommand && <code className="mono setup-cmd">{step.loginCommand}</code>}
-                {!mobile.active&&step.loginCommand&&<button type="button" className="btn small" onClick={() => void copyLoginCommand(step.loginCommand!)}>{copied ? 'Kopyalandı' : 'Kopyala'}</button>}
-                {!mobile.active&&<button type="button" className="btn small" onClick={onSettings}>Ayarlar → Hesaplar</button>}
+                {!mobile.active&&step.loginCommand&&<button type="button" className="btn small" onClick={() => void copyLoginCommand(step.loginCommand!)}>{copied ? t('shell.setup.copied') : t('shell.setup.copy')}</button>}
+                {!mobile.active&&<button type="button" className="btn small" onClick={onSettings}>{t('shell.setup.settingsAccounts')}</button>}
               </div>
             )}
             {!step.error && !step.done && step.key === 'team' && (
               <div className="setup-actions">
-                <span className="small muted">Ayarlar'da takımı seç ve kaydet</span>
-                {!mobile.active&&<button type="button" className="btn small" onClick={onSettings}>Ayarlar</button>}
+                <span className="small muted">{t('shell.setup.teamNote')}</span>
+                {!mobile.active&&<button type="button" className="btn small" onClick={onSettings}>{t('shell.nav.settings')}</button>}
               </div>
             )}
             {!step.error && !step.done && step.key === 'work' && (
               <div className="setup-actions">
-                {!mobile.active&&<button type="button" className="btn small primary" onClick={onNewWork}>Yeni çalışma</button>}
+                {!mobile.active&&<button type="button" className="btn small primary" onClick={onNewWork}>{t('shell.overview.newWork')}</button>}
               </div>
             )}
           </li>

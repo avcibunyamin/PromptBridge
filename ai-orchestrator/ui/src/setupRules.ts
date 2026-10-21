@@ -1,4 +1,5 @@
 /** Pure setup-guide rules for the Mac overview page (node-testable, no DOM or fetch). */
+import { t } from './i18n/index.ts'
 
 export type SetupStepKey = 'cli' | 'auth' | 'team' | 'work'
 
@@ -124,16 +125,16 @@ export function setupSteps(input: SetupInput = {}): SetupStep[] {
   const cliDone = !cliError && accounts.some(a => a.installed)
   const cliStep: SetupStep = {
     key: 'cli',
-    title: "Sağlayıcı CLI'si kurulu",
+    title: t('shell.setup.cliTitle'),
     done: cliDone,
     unverified: false,
     loginCommand: null,
     loginAccount: null,
     note: cliError
-      ? 'okunamadı'
+      ? t('shell.unreadable')
       : cliDone
         ? null
-        : "claude, codex, agy ya da ollama'dan birini kurun (docs/KULLANIM-KILAVUZU.md)",
+        : t('shell.setup.cliNote'),
     error: cliError,
   }
 
@@ -183,12 +184,12 @@ export function setupSteps(input: SetupInput = {}): SetupStep[] {
 
   const authStep: SetupStep = {
     key: 'auth',
-    title: 'Bir hesapta oturum açık',
+    title: t('shell.setup.authTitle'),
     done: authDone,
     unverified: authUnverified,
     loginCommand,
     loginAccount,
-    note: authError ? 'okunamadı' : authUnverified ? 'Doğrulanmadı' : null,
+    note: authError ? t('shell.unreadable') : authUnverified ? t('shell.setup.unverified') : null,
     error: authError,
   }
 
@@ -212,12 +213,12 @@ export function setupSteps(input: SetupInput = {}): SetupStep[] {
 
   const teamStep: SetupStep = {
     key: 'team',
-    title: 'Varsayılan takım kayıtlı',
+    title: t('shell.setup.teamTitle'),
     done: teamDone,
     unverified: false,
     loginCommand: null,
     loginAccount: null,
-    note: teamError ? 'okunamadı' : teamDone ? null : "Ayarlar'da takımı seç ve kaydet",
+    note: teamError ? t('shell.unreadable') : teamDone ? null : t('shell.setup.teamNote'),
     error: teamError,
   }
 
@@ -226,12 +227,12 @@ export function setupSteps(input: SetupInput = {}): SetupStep[] {
   const workDone = !workError && (input.workCount ?? 0) > 0
   const workStep: SetupStep = {
     key: 'work',
-    title: 'İlk çalışma',
+    title: t('shell.setup.workTitle'),
     done: workDone,
     unverified: false,
     loginCommand: null,
     loginAccount: null,
-    note: workError ? 'okunamadı' : null,
+    note: workError ? t('shell.unreadable') : null,
     error: workError,
   }
 

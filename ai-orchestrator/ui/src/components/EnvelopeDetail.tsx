@@ -1,6 +1,7 @@
 import { canApprove, mobile } from '../mobile'
 import { useEffect, useState } from 'react'
 import { getEnvelope, getContent, approveEnvelope, rejectEnvelope, type EnvelopeDetail as Detail } from '../api'
+import { t } from '../i18n'
 import { StatusBadge } from './StatusBadge'
 import { ContentPreview } from './ContentPreview'
 import { ContentEditor } from './ContentEditor'
@@ -72,7 +73,7 @@ export function EnvelopeDetail({ eid, onAction }: Props) {
     setTab('preview')
   }
 
-  if (loading && !detail) return <p className="loading">Yükleniyor…</p>
+  if (loading && !detail) return <p className="loading">{t('bridge.loading')}</p>
   if (!detail) return actionError ? <p className="action-error" role="alert">{actionError}</p> : null
 
   const { envelope, versions, history } = detail
@@ -82,7 +83,7 @@ export function EnvelopeDetail({ eid, onAction }: Props) {
     <div className="detail">
       <div className="detail-header">
         <div className="detail-title-row">
-          <h2 className="detail-title">{envelope.title ?? '(başlıksız)'}</h2>
+          <h2 className="detail-title">{envelope.title ?? t('bridge.untitled')}</h2>
           <StatusBadge state={envelope.state} />
         </div>
         <div className="detail-meta">
@@ -92,22 +93,22 @@ export function EnvelopeDetail({ eid, onAction }: Props) {
         </div>
         {envelope.delivered_path && (
           <div className="delivered-path muted">
-            İletildi: {envelope.delivered_path}
+            {t('bridge.detail.deliveredPath', { path: envelope.delivered_path })}
           </div>
         )}
       </div>
 
       <div className="tab-bar">
-        {((mobile.active ? ['preview', 'history'] : ['preview', 'edit', 'history']) as Tab[]).map(t => (
+        {((mobile.active ? ['preview', 'history'] : ['preview', 'edit', 'history']) as Tab[]).map(tk => (
           <button
-            key={t}
-            className={`tab-btn ${tab === t ? 'active' : ''}`}
-            onClick={() => setTab(t)}
+            key={tk}
+            className={`tab-btn ${tab === tk ? 'active' : ''}`}
+            onClick={() => setTab(tk)}
           >
-            {t === 'preview' ? 'Önizleme' : t === 'edit' ? 'Düzenle' : 'Geçmiş'}
+            {tk === 'preview' ? t('bridge.tab.preview') : tk === 'edit' ? t('bridge.tab.edit') : t('bridge.tab.history')}
           </button>
         ))}
-        <span className="tab-meta muted">{versions.length} sürüm</span>
+        <span className="tab-meta muted">{t('bridge.detail.versions', { count: versions.length })}</span>
       </div>
 
       <div className="tab-content">

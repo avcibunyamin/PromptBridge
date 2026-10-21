@@ -1,4 +1,6 @@
 /** TB-21: pure rules of the GitHub screens (node-testable, no fetch). */
+import { t } from './i18n/index.ts'
+
 export type GhStatus = { installed: boolean; logged_in: boolean; account: string | null }
 export type GhRepo = { nameWithOwner: string; isPrivate: boolean; isArchived: boolean; updatedAt: string }
 export type GhFile = { path: string; status: string; secret: boolean; workflow: boolean }
@@ -18,7 +20,14 @@ export function filterRepos(items: GhRepo[], query: string): GhRepo[] {
 /** K3: files that may hold secrets are listed but never preselected. */
 export const defaultSelection = (files: GhFile[]): string[] => files.filter(f => !f.secret).map(f => f.path)
 
-const STATUS: Record<string, string> = { '??': 'yeni', A: 'eklendi', M: 'değişti', D: 'silindi', R: 'yeniden adlandırıldı', T: 'tür değişti' }
+const STATUS: Record<string, string> = {
+  '??': t('tools.gh.status.untracked'),
+  A: t('tools.gh.status.added'),
+  M: t('tools.gh.status.modified'),
+  D: t('tools.gh.status.deleted'),
+  R: t('tools.gh.status.renamed'),
+  T: t('tools.gh.status.typechanged'),
+}
 /** `git status --porcelain` code → a word (the first letter that says something). */
 export const statusLabel = (code: string): string => STATUS[code] ?? STATUS[code.replace(/[ .]/g, '')[0] ?? ''] ?? code
 

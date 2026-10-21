@@ -24,8 +24,8 @@ test('control buttons are hidden on a phone', () => {
 
 // TB-20 (Codex review P3): the preview drawer and GitHub are Mac-only; K-033: Settings and “Yeni çalışma” need `command`.
 test('settings and preview buttons are hidden on a phone', () => {
-  for (const [file, label, guard] of [['components/WorkPanel.tsx', 'Yeni çalışma<', 'canCommand()'],
-    ['components/work/WorkView.tsx', "'Önizleme'", '!mobile.active'], ['components/work/WorkView.tsx', '>GitHub<', '!mobile.active'], ['components/work/WorkView.tsx', '>Ana klasöre getir<', '!mobile.active'], ['components/work/WorkView.tsx', '>Testler<', '!mobile.active']] as const) {   // TB-21, TB-26
+  for (const [file, label, guard] of [['components/WorkPanel.tsx', "t('shell.work.new')", 'canCommand()'],
+    ['components/work/WorkView.tsx', "t('work.preview')", '!mobile.active'], ['components/work/WorkView.tsx', '>GitHub<', '!mobile.active'], ['components/work/WorkView.tsx', ">{t('work.bringToMain')}<", '!mobile.active'], ['components/work/WorkView.tsx', ">{t('work.tests')}<", '!mobile.active']] as const) {   // TB-21, TB-26
     const src = readFileSync(new URL(`../src/${file}`, import.meta.url), 'utf8')
     const at = src.indexOf(label); assert.ok(at > 0, `${file}: ${label} not found`)
     const before = src.slice(0, src.lastIndexOf('<button', at))

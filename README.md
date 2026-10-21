@@ -79,6 +79,7 @@ make install
 - **[Mimari Doküman](AI-Orkestrasyon-Mimari-Dokumani.md):** Sistem mimarisi, durum makineleri, güvenlik sınırları ve faz kararları.
 - **[Katkıda Bulunma (CONTRIBUTING.md)](CONTRIBUTING.md):** Testleri çalıştırma, dal ve yazar → inceleyici inceleme akışı.
 - **[Güvenlik Politikası (SECURITY.md)](SECURITY.md):** Güvenlik açığı bildirimi ve tehdit modeli özeti.
+- **[Sürüm Notları (CHANGELOG.md)](CHANGELOG.md):** Sürüm notları ve değişiklik geçmişi.
 - **[Sunucu README](ai-orchestrator/README.md)** · **[Mac Uygulaması README](apps/mac/README.md)**
 
 ---
@@ -120,4 +121,4 @@ cd ../apps/mac  # if inside ai-orchestrator
 make install
 ```
 
-Open **<http://127.0.0.1:8765/ui/>** in your browser. For full instructions, see the **[English User Guide](docs/USER-GUIDE.md)**, **[Contributing Guide](CONTRIBUTING.md)**, and **[Security Policy](SECURITY.md)**. Licensed under the **[MIT License](LICENSE)**.
+Open **<http://127.0.0.1:8765/ui/>** in your browser. For full instructions, see the **[English User Guide](docs/USER-GUIDE.md)**, **[Contributing Guide](CONTRIBUTING.md)**, **[Security Policy](SECURITY.md)**, and **[Changelog](CHANGELOG.md)**. Licensed under the **[MIT License](LICENSE)**.

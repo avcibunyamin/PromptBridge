@@ -1,6 +1,7 @@
 /** TB-10: chain identities `provider[@account][/model][~effort]` and the options of one chain link.
  *  Pure (no React), so `npm test` covers the provider/account → model → effort flow. Mirrors
  *  provider_policy.split / covers; the server re-checks every team with the same rules. */
+import { t } from '../../i18n/index.ts'
 
 export type CatalogEntry = {identity:string;provider:string;account:string|null;model:string;display_name?:string;efforts:string[];default_effort?:string;status:'available'|'unverified'|'unsupported';source:'live'|'fallback'}
 export type Catalog = {entries:CatalogEntry[];errors:Record<string,string>;notes?:Record<string,string>;checked_at:number|null;efforts:Record<string,string[]>}
@@ -26,7 +27,7 @@ const aliasLabels:Record<string,string> = {
 }
 export const effortLabel = (effort:string) => ({low:'Low',medium:'Medium',high:'High',xhigh:'XHigh',max:'Max'} as Record<string,string>)[effort] ?? effort
 export function modelLabel(catalog:Catalog|null, base:string, model:string|null){
-  if(!model)return '(varsayılan model)'
+  if(!model)return t('session.team.defaultModel')
   const entry = catalog?.entries.find(e => e.identity === joinId(base, model, null))
   if(entry?.display_name)return entry.display_name
   if(aliasLabels[model])return aliasLabels[model]

@@ -1,0 +1,44 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [0.3.0] - 2026-10-22
+
+### Added
+- English user interface. Choose the language in Settings → Appearance; it is saved on each device. Without a saved choice the panel follows the browser language (Turkish for `tr`, English otherwise).
+- This changelog.
+
+### Changed
+- Accessibility: keyboard focus returns to the work after renaming it and to the edit button after editing a title; Escape cancels title editing; long command output is keyboard-scrollable; the event feed is announced as a live log.
+
+## [0.2.0] - 2026-10-21
+
+### Added
+- `ai-orchestrator/deploy/release-public.sh`: exports `main` to a separate public tree as a single release commit and tag; checks forbidden paths, a local (untracked) personal-pattern denylist and secret patterns, rolls back on failure, never pushes.
+
+### Changed
+- Accessibility: WCAG AA contrast for secondary text, status colors and dark-theme buttons; visible keyboard focus in the work menu and composer; screen-reader labels, roles and live regions (error banner, filters, per-work menu buttons, connection and progress status).
+
+### Fixed
+- A session waiting for quota without an automatic retry plan can now be stopped (it previously could not be cancelled or continued).
+
+## [0.1.0] - 2026-10-21
+
+### Added
+- First public release. Local orchestrator that runs AI coding CLIs (Claude Code, Antigravity `agy`, Codex, Ollama) as a supervised author → reviewer team with human approval.
+- SQLite state machine with append-only history, versioned migrations and crash recovery.
+- React panel (Mac and phone layouts): works as conversations, provider/model/effort per message, quota and context display, first-run setup guide, Settings → Accounts, work recipes (`/` menu).
+- Isolated git worktree per work with "bring to source folder" and review-before-merge; pre-review tests in a sandbox; preview server.
+- Phone access through a Tailscale gateway with pairing codes and per-device scopes; Web Push notifications.
+- Safety: loopback-only server, cross-site guard on every mutating endpoint, prompts never passed through a shell, read-only reviewers, git hook/config change reporting.
+- Turkish and English user guides, MIT license.
+
+[Unreleased]: https://github.com/avcibunyamin/PromptBridge/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/avcibunyamin/PromptBridge/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/avcibunyamin/PromptBridge/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/avcibunyamin/PromptBridge/releases/tag/v0.1.0

@@ -1,4 +1,5 @@
 /** K-039: context fill and remaining quota for one chain link. Pure (no React), so `npm test` covers it. */
+import { t } from '../../i18n/index.ts'
 import { baseOf, splitId } from './team.ts'
 
 export type QuotaWindow = {label:string;kind:'weekly'|'five_hour'|'other';remaining:number|null;resets_in?:string|null;resets_at?:number|null;status?:string|null}
@@ -72,5 +73,5 @@ export function resetText(w:QuotaWindow, now=Date.now()/1000):string|null {
   else if(w.resets_in){const m=/(?:(\d+)h)?\s*(?:(\d+)m)?/.exec(w.resets_in);if(m&&(m[1]||m[2]))mins=Number(m[1]??0)*60+Number(m[2]??0)}
   if(mins===null)return null
   const d=Math.floor(mins/1440), h=Math.floor(mins%1440/60), m=mins%60
-  return d?`${d} gün ${h} sa`:h?`${h} sa ${m} dk`:`${m} dk`
+  return d?t('shared.reset.days_hours',{d,h}):h?t('shared.reset.hours_mins',{h,m}):t('shared.reset.mins',{m})
 }

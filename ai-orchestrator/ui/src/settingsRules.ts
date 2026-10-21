@@ -1,4 +1,6 @@
-/** TB-19 (K-026): pure settings rules (no imports, so `npm test` covers them). */
+/** TB-19 (K-026): pure settings rules (only the i18n `t` import, no fetch/React, so `npm test` covers them). */
+import { t } from './i18n/index.ts'
+
 export type Team = { author: string[]; reviewer: string[] }
 export type Theme = 'system' | 'dark' | 'light'
 export type WorkWaitSetting = { enabled: boolean; deadline_hours?: number; max_attempts?: number }
@@ -142,16 +144,16 @@ export function deleteWorkErrorMessage(e: unknown): string {
     ? err.body.detail.detail
     : typeof err?.body?.detail === 'string' ? err.body.detail : undefined
   if (err?.status === 409 && (code === 'work_active' || !code)) {
-    return 'Bu çalışmada etkin veya bekleyen bir yürütme var; önce yürütmeyi durdurun veya tamamlanmasını bekleyin.'
+    return t('settings.err.work_active')
   }
   if (err?.status === 409 && code === 'revision_conflict') {
-    return 'Çalışma bu sırada güncellendi; lütfen tekrar deneyin.'
+    return t('settings.err.revision_conflict')
   }
   if (err?.status === 404 || code === 'work_not_found') {
-    return 'Çalışma bulunamadı.'
+    return t('err.work_not_found')
   }
   if (err?.status === 403 && code === 'mobile_field') {
-    return 'Bu işlem telefondan yapılamaz.'
+    return t('settings.err.mobile_field')
   }
   return nestedDetail || err?.message || String(e)
 }

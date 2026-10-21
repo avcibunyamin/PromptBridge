@@ -6,24 +6,25 @@ import { agyFamilyLabel, agyGroups, agyName, agyParts, baseOf, covers, effortLab
 import { teamPreviewer } from './flows'
 import { mobile } from '../../mobile'
 import { UsageRing } from './UsageRing'
+import { locale, t } from '../../i18n'
 
 /** `preview` belongs to exactly `team`; it is null while the newest selection's preview is pending or invalid. */
 export type TeamSelection = {team:Team;preview:TeamPreview|null;invalid?:boolean}
 
-const ROLES = [['author','WRITE','Yazar · yazma'],['reviewer','READ_ONLY','İnceleyici · salt okunur']] as const
-const SHORT = {author:'Yazar',reviewer:'İnceleyici'} as const
-const authLabels:Record<string,[string,string]> = {authenticated:['Oturum açık','ok'],unauthenticated:['Oturum yok','warn'],unknown:['Oturum bilinmiyor','idle'],
-  model_unavailable:['Model yok (agy listesinde değil)','bad']}
+const ROLES = [['author','WRITE',t('session.team.role.authorWrite')],['reviewer','READ_ONLY',t('session.team.role.reviewerReadOnly')]] as const
+const SHORT = {author:t('session.role.author'),reviewer:t('session.role.reviewer')} as const
+const authLabels:Record<string,[string,string]> = {authenticated:[t('session.team.auth.authenticated'),'ok'],unauthenticated:[t('session.team.auth.unauthenticated'),'warn'],unknown:[t('session.team.auth.unknown'),'idle'],
+  model_unavailable:[t('session.team.auth.modelUnavailable'),'bad']}
 const MAX_CHAIN=4
-const reasons:Record<string,string> = {provider_not_allowed:'bu rolde izinli değil',profile_unsupported:'bu rolün profilini desteklemiyor',
-  duplicate_in_role:'aynı rolde iki kez seçildi',chain_length:`her rol için bir ana ve en fazla ${MAX_CHAIN-1} yedek seçilir`,unknown_provider:'bilinmeyen sağlayıcı',
-  account_unsupported:'bu sağlayıcı hesap seçimini desteklemiyor',model_unsupported:'bu sağlayıcı model seçimini desteklemiyor',model_required:'bu sağlayıcı için model seçilmeli (ör. agy@hesap1/gemini-3.8-flash-high)',
-  model_unavailable:'model listesinde yok ya da liste henüz yenilenmedi',
-  effort_unsupported:'bu sağlayıcı bu efor seviyesini desteklemiyor',tools_unsupported:'bu yerel model araç çağıramıyor; yazar ya da inceleyici olamaz'}
-const catalogLabels:Record<string,[string,string]> = {unverified:['Doğrulanmadı','idle'],model_unavailable:['Model yok','bad'],unsupported:['Araç desteği yok','bad']}
-const catalogErrors:Record<string,string> = {unauthenticated:'Giriş yok: model listesi alınamadı',timeout:'Model listesi zaman aşımına uğradı',
-  unavailable:'agy çalıştırılamadı (kurulu değil ya da hesap klasörü kullanılamıyor)',cleanup_unverified:'Listeleme süreçlerinin kapandığı doğrulanamadı'}
-const time = (s:number) => new Date(s*1000).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})
+const reasons:Record<string,string> = {provider_not_allowed:t('session.team.reason.providerNotAllowed'),profile_unsupported:t('session.team.reason.profileUnsupported'),
+  duplicate_in_role:t('session.team.reason.duplicateInRole'),chain_length:t('session.team.reason.chainLength',{max:MAX_CHAIN-1}),unknown_provider:t('session.team.reason.unknownProvider'),
+  account_unsupported:t('session.team.reason.accountUnsupported'),model_unsupported:t('session.team.reason.modelUnsupported'),model_required:t('session.team.reason.modelRequired'),
+  model_unavailable:t('session.team.reason.modelUnavailable'),
+  effort_unsupported:t('session.team.reason.effortUnsupported'),tools_unsupported:t('session.team.reason.toolsUnsupported')}
+const catalogLabels:Record<string,[string,string]> = {unverified:[t('session.team.catalog.unverified'),'idle'],model_unavailable:[t('session.team.catalog.modelUnavailable'),'bad'],unsupported:[t('session.team.catalog.unsupported'),'bad']}
+const catalogErrors:Record<string,string> = {unauthenticated:t('session.team.catalogError.unauthenticated'),timeout:t('session.team.catalogError.timeout'),
+  unavailable:t('session.team.catalogError.unavailable'),cleanup_unverified:t('session.team.catalogError.cleanupUnverified')}
+const time = (s:number) => new Date(s*1000).toLocaleTimeString(locale,{hour:'2-digit',minute:'2-digit'})
 
 /** F3-03 team card: per role an ordered chain (TB-06: a primary and up to three backups, each an identity such as
  *  `codex@is`), only providers the server allows for that role (and whose profile fits). The policy, digest and badges come from the server; nothing is computed here.
@@ -72,9 +73,9 @@ export function TeamPicker({policy,initial,compact=false,startOpen=false,onChang
     .filter(p=>!policy.capabilities||policy.capabilities[p]?.profiles.includes(profile))
   const capOf=(id:string)=>policy.capabilities?.[id]??policy.capabilities?.[splitId(id)?.kind??'']
   const setRole=(role:'author'|'reviewer',chain:string[])=>setTeam(t=>({...t,[role]:chain}))
-  const missing=(t:Team)=>catalog===null&&!catalogError?['model listesi yükleniyor']:ROLES.flatMap(([role,profile])=>{const o=linkOptions(allowed(role,profile),catalog,capOf)
-    return t[role].flatMap((id,i)=>{const m=linkMissing(id,o)
-      return m?[`${SHORT[role]} ${i===0?'ana halka':`yedek ${i}`} (${baseOf(id)}): ${m==='model'?'model':'efor'} seçin`]:[]})})
+  const missing=(tm:Team)=>catalog===null&&!catalogError?[t('session.team.gap.loadingModels')]:ROLES.flatMap(([role,profile])=>{const o=linkOptions(allowed(role,profile),catalog,capOf)
+    return tm[role].flatMap((id,i)=>{const m=linkMissing(id,o)
+      return m?[t('session.team.gap.selectField',{role:SHORT[role],link:i===0?t('session.team.link.primaryLower'):t('session.team.link.backupLower',{index:i}),base:baseOf(id),field:m==='model'?t('session.team.field.modelLower'):t('session.team.field.effortLower')})]:[]})})
   gaps.current=missing
   const gapList=missing(team)
   async function checkAuth(){
@@ -84,11 +85,11 @@ export function TeamPicker({policy,initial,compact=false,startOpen=false,onChang
   }
   const badges=(name:string)=>{
     const a=availability?.[name]??availability?.[baseOf(name)]
-    if(!installedOf(policy,name))return <span className="pill bad">Kurulu değil</span>
+    if(!installedOf(policy,name))return <span className="pill bad">{t('session.team.badge.notInstalled')}</span>
     const cs=preview?.catalog?.[name], listError=catalog?.errors[baseOf(name)]
-    const catalogPill=cs&&catalogLabels[cs]?<span className={'pill '+catalogLabels[cs][1]} title={cs==='unverified'?'Claude CLI model listesi vermez; çalışan model her adımda doğrulanır.':'Son listede bu model yok.'}>{catalogLabels[cs][0]}</span>
-      :listError&&!(listError==='unauthenticated'&&a?.auth==='unauthenticated')?<span className="pill warn" title={catalogErrors[listError]??listError}>{listError==='unauthenticated'?'Giriş yok':'Liste alınamadı'}</span>:null
-    if(a?.health==='probe_cleanup_failed')return <>{catalogPill}<span className="pill bad" title="Önceki oturum kontrolünün süreçleri temizlendiği doğrulanamadı; sunucu yeniden başlayana kadar kontrol yapılmaz.">Oturum kontrolü devre dışı</span></>
+    const catalogPill=cs&&catalogLabels[cs]?<span className={'pill '+catalogLabels[cs][1]} title={cs==='unverified'?t('session.team.badge.unverifiedTitle'):t('session.team.badge.notInLastListTitle')}>{catalogLabels[cs][0]}</span>
+      :listError&&!(listError==='unauthenticated'&&a?.auth==='unauthenticated')?<span className="pill warn" title={catalogErrors[listError]??listError}>{listError==='unauthenticated'?t('session.team.badge.noSignIn'):t('session.team.badge.listFailed')}</span>:null
+    if(a?.health==='probe_cleanup_failed')return <>{catalogPill}<span className="pill bad" title={t('session.team.badge.probeDisabledTitle')}>{t('session.team.badge.probeDisabled')}</span></>
     const [label,tone]=authLabels[a?.auth??'unknown'];return <>{catalogPill}<span className={'pill '+tone}>{label}</span></>
   }
   const checkedAt=Object.values(availability??{}).map(a=>a.checked_at).filter((x):x is number=>!!x).sort().pop()
@@ -100,14 +101,14 @@ export function TeamPicker({policy,initial,compact=false,startOpen=false,onChang
     const current=chain[i], s=splitId(current), base=baseOf(current), model=s?.model??null, effort=s?.effort??null
     const others=chain.filter((_,j)=>j!==i), models=o.modelsFor(base), efforts=o.effortsFor(base,model)
     const defaultEffort=o.defaultEffortFor(base,model)
-    const name=bare?SHORT[role]:i===0?'Ana halka':`Yedek ${i}`
+    const name=bare?SHORT[role]:i===0?t('session.team.link.primary'):t('session.team.link.backup',{index:i})
     // Changing the model keeps the effort while the ceiling still admits it.
     const withModel=(m:string|null)=>joinId(base,m,effort&&o.effortsFor(base,m).includes(effort)?effort:null)
     const wrap=(text:string,el:JSX.Element)=>bare?el:<label>{text}{el}</label>
-    const provider=wrap(`${name} · sağlayıcı / hesap`,<select value={base} aria-label={`${name} sağlayıcı`} onChange={e=>put(o.firstOf(e.target.value,others)??e.target.value)}>
-        {!o.bases.includes(base)&&<option value={base}>{base} (izinli değil)</option>}
+    const provider=wrap(t('session.team.field.providerLabel',{name}),<select value={base} aria-label={t('session.team.field.providerAria',{name})} onChange={e=>put(o.firstOf(e.target.value,others)??e.target.value)}>
+        {!o.bases.includes(base)&&<option value={base}>{t('session.team.option.notAllowed',{value:base})}</option>}
         {o.bases.map(b=><option key={b} value={b} disabled={b!==base&&(!installedOf(policy,b)||!o.ready(b)||!o.firstOf(b,others))}>
-          {b}{installedOf(policy,b)?'':' — kurulu değil'}{o.ready(b)?'':catalog?.errors[b]?' — model listesi alınamadı':' — önce model listesini yenileyin'}</option>)}
+          {b}{installedOf(policy,b)?'':t('session.team.option.notInstalledSuffix')}{o.ready(b)?'':catalog?.errors[b]?t('session.team.option.listFailedSuffix'):t('session.team.option.refreshFirstSuffix')}</option>)}
       </select>)
     // K-038: agy shows model family + effort; anything off-list keeps the plain selects below.
     if(s?.kind==='agy'&&model&&models.includes(model)){
@@ -119,28 +120,28 @@ export function TeamPicker({policy,initial,compact=false,startOpen=false,onChang
         return agyName(fam,free??ef)}
       return <>
         {provider}
-        {wrap('Model',<select value={cur.family} aria-label={`${name} model`} onChange={e=>put(joinId(base,pick(e.target.value),null))}>
+        {wrap(t('session.team.field.model'),<select value={cur.family} aria-label={t('session.team.field.modelAria',{name})} onChange={e=>put(joinId(base,pick(e.target.value),null))}>
           {[...groups].map(([fam,list])=><option key={fam} value={fam} disabled={fam!==cur.family&&(list.length?list:[null]).every(x=>taken(agyName(fam,x)))}>
             {bare?agyFamilyLabel(catalog,base,fam,list):`${agyFamilyLabel(catalog,base,fam,list)} — ${fam}`}</option>)}
         </select>)}
-        {famEfforts.length>0&&wrap('Efor',<select value={cur.effort??''} aria-label={`${name} efor`} onChange={e=>put(joinId(base,agyName(cur.family,e.target.value),null))}>
-          {!cur.effort&&<option value="" disabled hidden>Efor seç</option>}
+        {famEfforts.length>0&&wrap(t('session.team.field.effort'),<select value={cur.effort??''} aria-label={t('session.team.field.effortAria',{name})} onChange={e=>put(joinId(base,agyName(cur.family,e.target.value),null))}>
+          {!cur.effort&&<option value="" disabled hidden>{t('session.team.option.selectEffort')}</option>}
           {famEfforts.map(ef=><option key={ef} value={ef} disabled={ef!==cur.effort&&taken(agyName(cur.family,ef))}>{effortLabel(ef)}</option>)}
         </select>)}
       </>
     }
     return <>
       {provider}
-      {(models.length>0||model)&&wrap('Model',<select value={model??''} aria-label={`${name} model`} onChange={e=>put(withModel(e.target.value||null))}>
-        {!model&&<option value="" disabled hidden>Model seç</option>}
-        {model&&!models.includes(model)&&<option value={model}>{model} ({!entries.some(e=>covers(e,current))?'izinli değil'
-          :preview?.catalog?.[current]==='unsupported'?'araç desteği yok'
-          :preview?.catalog?.[current]==='model_unavailable'?'model yok':'listede yok'})</option>}
+      {(models.length>0||model)&&wrap(t('session.team.field.model'),<select value={model??''} aria-label={t('session.team.field.modelAria',{name})} onChange={e=>put(withModel(e.target.value||null))}>
+        {!model&&<option value="" disabled hidden>{t('session.team.option.selectModel')}</option>}
+        {model&&!models.includes(model)&&<option value={model}>{model} ({!entries.some(e=>covers(e,current))?t('session.team.option.reason.notAllowed')
+          :preview?.catalog?.[current]==='unsupported'?t('session.team.option.reason.unsupported')
+          :preview?.catalog?.[current]==='model_unavailable'?t('session.team.option.reason.modelUnavailable'):t('session.team.option.reason.notListed')})</option>}
         {models.map(m=><option key={m} value={m} disabled={m!==model&&others.includes(joinId(base,m,effort))}>
           {bare?modelLabel(catalog,base,m):`${modelLabel(catalog,base,m)} — ${m}`}</option>)}
       </select>)}
-      {efforts.length>0&&wrap('Efor',<select value={effort??''} aria-label={`${name} efor`} onChange={e=>put(joinId(base,model,e.target.value||null))}>
-        {!effort&&<option value="" disabled hidden>{defaultEffort?`Efor seç (önerilen ${effortLabel(defaultEffort)})`:'Efor seç'}</option>}
+      {efforts.length>0&&wrap(t('session.team.field.effort'),<select value={effort??''} aria-label={t('session.team.field.effortAria',{name})} onChange={e=>put(joinId(base,model,e.target.value||null))}>
+        {!effort&&<option value="" disabled hidden>{defaultEffort?t('session.team.option.selectEffortRecommended',{effort:effortLabel(defaultEffort)}):t('session.team.option.selectEffort')}</option>}
         {efforts.map(ef=><option key={ef} value={ef} disabled={ef!==effort&&others.includes(joinId(base,model,ef))}>{effortLabel(ef)}</option>)}
       </select>)}
     </>
@@ -152,27 +153,27 @@ export function TeamPicker({policy,initial,compact=false,startOpen=false,onChang
   const notReady=ROLES.flatMap(([role,profile])=>{const o=linkOptions(allowed(role,profile),catalog,capOf);return o.bases.filter(b=>!o.ready(b))})
   // Calm, specific notes; real errors (an invalid team) stay in the editor's alert list.
   const notes=[...new Set([
-    ...(catalog===null&&!catalogError?[]:gapList.map(g=>`${g}.`)),
-    ...(preview?.warnings.includes('same_provider_both_roles')?['Aynı sağlayıcı iki rolde: inceleme daha az bağımsız olur (konuşmalar rol başına ayrı tutulur).']:[]),
-    ...links.filter(id=>preview?.catalog?.[id]==='model_unavailable'||authOf(id)==='model_unavailable').map(id=>`${id}: model son listede yok; başka bir model seçin.`),
-    ...links.filter(id=>authOf(id)==='unauthenticated').map(id=>`${baseOf(id)}: oturum yok; sıra bu halkaya gelirse hesap girişi istenir.`),
+    ...(catalog===null&&!catalogError?[]:gapList.map(g=>t('session.team.note.gap',{gap:g}))),
+    ...(preview?.warnings.includes('same_provider_both_roles')?[t('session.team.note.sameProvider')]:[]),
+    ...links.filter(id=>preview?.catalog?.[id]==='model_unavailable'||authOf(id)==='model_unavailable').map(id=>t('session.team.note.modelUnavailable',{id})),
+    ...links.filter(id=>authOf(id)==='unauthenticated').map(id=>t('session.team.note.unauthenticated',{base:baseOf(id)})),
     // One note per account: a sign-in problem already said above is not repeated as a listing error.
     ...Object.entries(catalog?.errors??{}).filter(([b,e])=>!(e==='unauthenticated'&&links.some(id=>baseOf(id)===b&&authOf(id)==='unauthenticated')))
-      .map(([b,e])=>`${b}: ${b==='ollama'&&e==='unavailable'?'Ollama\'ya ulaşılamadı; çalıştığından emin olun':catalogErrors[e]??e}.`),
+      .map(([b,e])=>t('session.team.note.catalogError',{base:b,error:b==='ollama'&&e==='unavailable'?t('session.team.catalogError.ollamaUnavailable'):catalogErrors[e]??e})),
     // TB-14: a small Ollama context breaks Codex's tool calls
-    ...Object.entries(catalog?.notes??{}).filter(([,n])=>n.startsWith('small_context:')).map(([b,n])=>`${b}: model ${n.split(':')[1]} bağlamla yüklü; araç çağrıları bozulabilir. Ollama'yı OLLAMA_CONTEXT_LENGTH=16384 ile başlatın.`),
-    ...notReady.filter(b=>!catalog?.errors[b]).map(b=>`${b}: model listesi henüz yok; “Yenile” ile alın.`),
-    ...(catalogError?[`Model listesi alınamadı (${catalogError}); mevcut takım kullanılabilir.`]:[]),
+    ...Object.entries(catalog?.notes??{}).filter(([,n])=>n.startsWith('small_context:')).map(([b,n])=>t('session.team.note.smallContext',{base:b,ctx:n.split(':')[1]??''})),
+    ...notReady.filter(b=>!catalog?.errors[b]).map(b=>t('session.team.note.notReady',{base:b})),
+    ...(catalogError?[t('session.team.note.catalogFetchFailed',{error:catalogError})]:[]),
   ])]
 
   // the gateway refuses both (they start provider processes); a phone uses what the Mac last fetched (K-033/4)
   const actions=mobile.active?null:<div className="team-actions">
     <button type="button" className="btn small" disabled={checking} aria-busy={checking} onClick={()=>void checkAuth()}
-      title="Sağlayıcı oturumlarını kontrol eder (model çağrısı yok)">{checking?<LoaderCircle className="spin" aria-hidden/>:<ShieldCheck aria-hidden/>}{checking?'Kontrol ediliyor…':'Oturum durumu'}</button>
+      title={t('session.team.checkAuth.title')}>{checking?<LoaderCircle className="spin" aria-hidden/>:<ShieldCheck aria-hidden/>}{checking?t('session.team.checkAuth.checking'):t('session.team.checkAuth.label')}</button>
     <button type="button" className="btn small" disabled={refreshing} aria-busy={refreshing} onClick={()=>void refreshAll()}
-      title="Sağlayıcı politikasını ve model listesini yeniden alır (model çağrısı yok)"><RefreshCw className={refreshing?'spin':undefined} aria-hidden/>{refreshing?'Yenileniyor…':'Yenile'}</button>
+      title={t('session.team.refresh.title')}><RefreshCw className={refreshing?'spin':undefined} aria-hidden/>{refreshing?t('session.team.refresh.refreshing'):t('session.team.refresh.label')}</button>
   </div>
-  const times=<span className="muted small team-times" role="status">{checkedAt?`Oturum kontrolü ${time(checkedAt)}`:'Oturumlar kontrol edilmedi'} · {catalog?.checked_at?`Model listesi ${time(catalog.checked_at)}`:'Model listesi yenilenmedi'}</span>
+  const times=<span className="muted small team-times" role="status">{checkedAt?t('session.team.times.authCheckedAt',{time:time(checkedAt)}):t('session.team.times.authNotChecked')} · {catalog?.checked_at?t('session.team.times.catalogCheckedAt',{time:time(catalog.checked_at)}):t('session.team.times.catalogNotChecked')}</span>
 
   const editor=<div className="team-editor" id={editorId}>
     {ROLES.map(([role,profile,label])=>{
@@ -183,26 +184,26 @@ export function TeamPicker({policy,initial,compact=false,startOpen=false,onChang
         <div className="team-selects">
           {chain.map((_,i)=><div className="team-link" key={i}>
               {linkFields(role,profile,i)}
-              {i>0&&<button type="button" className="icon-btn remove-link" aria-label={`Yedek ${i} kaldır`} title="Bu yedeği kaldır" onClick={()=>setRole(role,chain.filter((_,j)=>j!==i))}><Trash2 aria-hidden/></button>}
+              {i>0&&<button type="button" className="icon-btn remove-link" aria-label={t('session.team.removeBackupAria',{index:i})} title={t('session.team.removeBackupTitle')} onClick={()=>setRole(role,chain.filter((_,j)=>j!==i))}><Trash2 aria-hidden/></button>}
             </div>)}
-          {next&&<button type="button" className="btn small add-link" onClick={()=>setRole(role,[...chain,next])}><Plus aria-hidden/>Yedek ekle</button>}
+          {next&&<button type="button" className="btn small add-link" onClick={()=>setRole(role,[...chain,next])}><Plus aria-hidden/>{t('session.team.addBackup')}</button>}
         </div>
         <div className="team-badges">{team[role].map(p=><span className="flow" key={p}><Provider name={p}/>{badges(p)}</span>)}</div>
         {roleProblems.length>0&&<ul className="team-problems" role="alert">{roleProblems.map((p,i)=><li key={i}><strong>{p.provider||label}</strong>: {reasons[p.reason]??p.reason}</li>)}</ul>}
       </fieldset>
     })}
-      <p className="muted small">Oturumu olmayan sağlayıcı uyarıyla seçilebilir. Claude modelleri “Doğrulanmadı”: CLI liste vermez, çalışan model her adımda kontrol edilir.</p>
+      <p className="muted small">{t('session.team.editorNote')}</p>
   </div>
 
   // Send stays disabled until the preview answers; say why.
-  const waiting=!preview&&!problems.length&&!error&&<p className="muted small" role="status">Takım önizleniyor…</p>
+  const waiting=!preview&&!problems.length&&!error&&<p className="muted small" role="status">{t('session.team.previewing')}</p>
 
-  if(compact)return <section className="composer-picker" aria-label="Model">
+  if(compact)return <section className="composer-picker" aria-label={t('session.team.field.model')}>
     {/* K-039: Claude-like bar — tools on the left; model, effort, the context/quota ring and send on the right. */}
     <div className="composer-model">
       <button type="button" className="icon-btn composer-tools" aria-expanded={open} aria-controls={editorId} onClick={()=>setOpen(o=>!o)}
-        aria-label={open?'Gelişmişi kapat':'Gelişmiş: takım, yedekler, inceleyici'} title={open?'Gelişmişi kapat':'Gelişmiş: takım, yedekler, inceleyici'}>{open?<X aria-hidden/>:<SlidersHorizontal aria-hidden/>}</button>
-      <span className="composer-reviewer" title={`İnceleme zinciri: ${team.reviewer.join(' → ')}`}>İnceleme: {team.reviewer[0]?short(team.reviewer[0]):'—'}{team.reviewer.length>1?` +${team.reviewer.length-1}`:''}</span>
+        aria-label={open?t('session.team.advanced.close'):t('session.team.advanced.open')} title={open?t('session.team.advanced.close'):t('session.team.advanced.open')}>{open?<X aria-hidden/>:<SlidersHorizontal aria-hidden/>}</button>
+      <span className="composer-reviewer" title={t('session.team.reviewerChainTitle',{chain:team.reviewer.join(' → ')})}>{team.reviewer.length>1?t('session.team.reviewerSummaryMore',{reviewer:team.reviewer[0]?short(team.reviewer[0]):'—',more:team.reviewer.length-1}):t('session.team.reviewerSummary',{reviewer:team.reviewer[0]?short(team.reviewer[0]):'—'})}</span>
       <span className="spacer"/>
       <span className="composer-choice">
         {team.author.length>0&&linkFields('author','WRITE',0,true)}
@@ -210,9 +211,9 @@ export function TeamPicker({policy,initial,compact=false,startOpen=false,onChang
         {trailing}
       </span>
     </div>
-    {!open&&problems.length>0&&<p className="notice">Seçili takım geçerli değil; “Gelişmiş” ile düzeltin.</p>}
-    {catalog===null&&!catalogError?<p className="muted small" role="status">Model listesi yükleniyor…</p>
-      :gapList.length>0&&<p className="notice" role="status">Gönderilmeden önce seçin: {gapList.join(' · ')}{gapList.length>1||!gapList[0].startsWith('Yazar ana')?' (“Gelişmiş”)':''}</p>}
+    {!open&&problems.length>0&&<p className="notice">{t('session.team.invalidNotice')}</p>}
+    {catalog===null&&!catalogError?<p className="muted small" role="status">{t('session.team.loadingModels')}</p>
+      :gapList.length>0&&<p className="notice" role="status">{t('session.team.selectBeforeSend',{gaps:gapList.join(' · ')})}{gapList.length>1||!gapList[0].startsWith(t('session.team.gap.authorPrimaryPrefix'))?t('session.team.advancedSuffix'):''}</p>}
     {open&&<div className="composer-advanced">
       {notes.length>0&&<ul className="team-notes">{notes.map(n=><li key={n}><TriangleAlert aria-hidden/>{n}</li>)}</ul>}
       {editor}
@@ -222,7 +223,7 @@ export function TeamPicker({policy,initial,compact=false,startOpen=false,onChang
     {waiting}
   </section>
 
-  return <section className="team-picker" aria-label="Takım">
+  return <section className="team-picker" aria-label={t('session.team.ariaLabel')}>
     {notes.length>0&&<ul className="team-notes">{notes.map(n=><li key={n}><TriangleAlert aria-hidden/>{n}</li>)}</ul>}
     {open&&editor}
     {error&&<p className="error-banner" role="alert">{error}</p>}

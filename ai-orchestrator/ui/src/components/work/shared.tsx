@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 import { checkedFetch } from '../../api'
+import { locale, t } from '../../i18n'
 import { splitId, type Cap } from './team'
 
 /** Confirmation dialog on the native <dialog>: showModal() keeps focus inside and makes the page inert,
@@ -26,27 +27,27 @@ export type TeamPreview = {policy:PolicyBody;digest:string;warnings:string[];cat
 export type TeamProblem = {role:'author'|'reviewer';provider:string;reason:string}
 export const teamOf = (p:PolicyBody):Team => ({author:p.roles.author.map(i=>i.provider),reviewer:p.roles.reviewer.map(i=>i.provider)})
 export const RECOVERED = 'recovered_by_human'
-export const labels:Record<string,string> = {QUOTA:'Kota doldu',PENDING:'Bekliyor',COMPLETED:'Tamamlandı',QUEUED:'Sırada',RUNNING:'Çalışıyor',SUCCEEDED:'Tamamlandı',FAILED:'Hata',CANCELLED:'Durduruldu',RECOVERY_REQUIRED:'Kurtarma incelemesi gerekiyor',WAITING_APPROVAL:'Araç izni gerekiyor',WAITING_AUTH:'Hesap girişi gerekiyor',WAITING_CAPACITY:'Kota bekleniyor',WAITING_CONTEXT:'Bağlam incelemesi gerekiyor',WAITING_HUMAN:'Klasör değişti — karar gerekiyor',CONTEXT_EXHAUSTED:'Bağlam doldu',PAUSED:'Duraklatıldı'}
-export const contextLabels:Record<string,string> = {context_continuation_disabled:'Bu çalışma için bağlam devamı kapalı.',context_continuation_exhausted:'Adımın ortak bağlam devam sınırına ulaşıldı.',context_prompt_too_large:'Hedef ve devam paketi boyut sınırına sığmıyor.'}
-export const reasonLabels:Record<string,string> = {...contextLabels,[RECOVERED]:'İnsan onayıyla kurtarıldı — sahipli süreçler sonlandırıldı, klasör kilidi bırakıldı.',
-  PROMPT_TOO_LARGE:'İstem 128 KiB sınırını aşıyor; hiçbir sağlayıcı çağrılmadı.',
-  budget_exhausted:'Etkin süre bütçesi doldu; adım temiz biçimde durduruldu.'}
+export const labels:Record<string,string> = {QUOTA:t('shared.status.quota'),PENDING:t('shared.status.pending'),COMPLETED:t('shared.status.completed'),QUEUED:t('shared.status.queued'),RUNNING:t('shared.status.running'),SUCCEEDED:t('shared.status.succeeded'),FAILED:t('shared.status.failed'),CANCELLED:t('shared.status.cancelled'),RECOVERY_REQUIRED:t('shared.status.recovery_required'),WAITING_APPROVAL:t('shared.status.waiting_approval'),WAITING_AUTH:t('shared.status.waiting_auth'),WAITING_CAPACITY:t('shared.status.waiting_capacity'),WAITING_CONTEXT:t('shared.status.waiting_context'),WAITING_HUMAN:t('shared.status.waiting_human'),CONTEXT_EXHAUSTED:t('shared.status.context_exhausted'),PAUSED:t('shared.status.paused')}
+export const contextLabels:Record<string,string> = {context_continuation_disabled:t('shared.ctx.disabled'),context_continuation_exhausted:t('shared.ctx.exhausted'),context_prompt_too_large:t('shared.ctx.prompt_too_large')}
+export const reasonLabels:Record<string,string> = {...contextLabels,[RECOVERED]:t('shared.reason.recovered'),
+  PROMPT_TOO_LARGE:t('shared.reason.prompt_too_large'),
+  budget_exhausted:t('shared.reason.budget_exhausted')}
 /** F3-01a resume gate reasons (backend resume_decision event). */
-export const resumeReasons:Record<string,string> = {no_previous_run:'bu çalışmanın ilk yürütmesi',previous_run_not_succeeded:'önceki yürütme başarıyla bitmedi',
-  first_provider_not_codex:'yazar zinciri Codex ile başlamıyor',policy_changed:'sağlayıcı politikası değişti',workspace_mismatch:'klasör farklı',
-  no_completed_author_attempt:'önceki yürütmede tamamlanmış yazar denemesi yok',last_author_not_codex:'önceki yürütmenin son yazarı Codex değildi',
-  no_provider_session:'önceki konuşma kimliği kayıtlı değil',codex_home_changed:'önceki konuşma PromptBridge’in ayrı Codex alanından (K-014) önce açıldı',author_attempt_unclean:'önceki yazar süreci temiz kapanmadı',
-  other_writer:'arada bu klasörde başka bir PromptBridge çalışması yürüdü',baseline_missing:'önceki yürütmenin bitiş kaydı yok',
-  snapshot_incomplete:'klasör tam taranamadı',snapshot_scope_mismatch:'klasör tarama kapsamı değişti',workspace_changed:'klasörde önceki yürütmeden sonra değişiklik var',
-  retry_fresh:'insan yeniden denemesi her zaman taze başlar'}
-export const promptFormats:Record<string,string> = {RESUME_AUTHOR:'önceki konuşmaya devam istemi',FRESH_AUTHOR:'taze yazar istemi',REVIEWER:'bağımsız inceleme istemi',
-  CORRECTION:'aynı konuşmada düzeltme istemi',FRESH_CORRECTION:'taze düzeltme istemi'}
-export const promptRejections:Record<string,string> = {mandatory_exceeds_limit:'Zorunlu bölümler (kurallar, hedef, güncel istek) sınırı aşıyor.',
-  final_prompt_exceeds_limit:'Devir/devam eklendikten sonra son istem sınırı aşıyor.',history_metadata_exceeds_budget:'Geçmiş kayıtlarının özeti bile bütçeye sığmıyor.'}
+export const resumeReasons:Record<string,string> = {no_previous_run:t('shared.resume.no_previous_run'),previous_run_not_succeeded:t('shared.resume.previous_run_not_succeeded'),
+  first_provider_not_codex:t('shared.resume.first_provider_not_codex'),policy_changed:t('shared.resume.policy_changed'),workspace_mismatch:t('shared.resume.workspace_mismatch'),
+  no_completed_author_attempt:t('shared.resume.no_completed_author_attempt'),last_author_not_codex:t('shared.resume.last_author_not_codex'),
+  no_provider_session:t('shared.resume.no_provider_session'),codex_home_changed:t('shared.resume.codex_home_changed'),author_attempt_unclean:t('shared.resume.author_attempt_unclean'),
+  other_writer:t('shared.resume.other_writer'),baseline_missing:t('shared.resume.baseline_missing'),
+  snapshot_incomplete:t('shared.resume.snapshot_incomplete'),snapshot_scope_mismatch:t('shared.resume.snapshot_scope_mismatch'),workspace_changed:t('shared.resume.workspace_changed'),
+  retry_fresh:t('shared.resume.retry_fresh')}
+export const promptFormats:Record<string,string> = {RESUME_AUTHOR:t('shared.format.resume_author'),FRESH_AUTHOR:t('shared.format.fresh_author'),REVIEWER:t('shared.format.reviewer'),
+  CORRECTION:t('shared.format.correction'),FRESH_CORRECTION:t('shared.format.fresh_correction')}
+export const promptRejections:Record<string,string> = {mandatory_exceeds_limit:t('shared.reject.mandatory_exceeds_limit'),
+  final_prompt_exceeds_limit:t('shared.reject.final_prompt_exceeds_limit'),history_metadata_exceeds_budget:t('shared.reject.history_metadata_exceeds_budget')}
 
 export function Pill({status,recovered=false}:{status:string;recovered?:boolean}) {
   // K1: a human-recovered run is FAILED, but shown apart from ordinary failures.
-  if(recovered&&status==='FAILED')return <span className="pill warn"><span className="d" aria-hidden="true"/>İnsan kurtardı — temizlendi</span>
+  if(recovered&&status==='FAILED')return <span className="pill warn"><span className="d" aria-hidden="true"/>{t('shared.pill.recovered')}</span>
   const tone = ['COMPLETED','SUCCEEDED'].includes(status)?'ok':status==='RUNNING'?'run':status==='FAILED'?'bad':['CONTEXT_EXHAUSTED','WAITING_CONTEXT','QUOTA','WAITING_CAPACITY','WAITING_APPROVAL','WAITING_AUTH','WAITING_HUMAN','RECOVERY_REQUIRED','PAUSED'].includes(status)?'warn':'idle'
   return <span className={'pill '+tone}><span className="d" aria-hidden="true"/>{labels[status]||status}</span>
 }
@@ -54,8 +55,8 @@ export function Pill({status,recovered=false}:{status:string;recovered?:boolean}
 export function Provider({name}:{name:string}) {return <span className="prov"><span className={'g '+name.split(/[@/]/)[0]} aria-hidden="true">{name.slice(0,1).toUpperCase()}</span>{name}</span>}
 export function Chains({policy,installed}:{policy:Policy['policy'];installed?:Policy['installed']}) {
   return <div className="chains">{Object.entries(policy.roles).map(([role,chain])=><div className="chain-row" key={role}>
-    <span className={'chip '+role}>{role==='author'?'Yazar · yazma':'İnceleyici · salt okunur'}</span>
-    <div className="flow">{chain.map((p,i)=><span className="flow" key={p.provider}>{i>0&&<span className="arr" aria-hidden="true">→</span>}<Provider name={p.provider}/>{installed&&!(installed[p.provider]??installed[splitId(p.provider)?.kind??''])&&<span className="pill bad">Kurulu değil</span>}</span>)}</div>
+    <span className={'chip '+role}>{role==='author'?t('shared.role.author'):t('shared.role.reviewer')}</span>
+    <div className="flow">{chain.map((p,i)=><span className="flow" key={p.provider}>{i>0&&<span className="arr" aria-hidden="true">→</span>}<Provider name={p.provider}/>{installed&&!(installed[p.provider]??installed[splitId(p.provider)?.kind??''])&&<span className="pill bad">{t('shared.not_installed')}</span>}</span>)}</div>
   </div>)}</div>
 }
 export const active = (s:string) => s === 'QUEUED' || s === 'RUNNING'
@@ -65,18 +66,18 @@ const WAIT_DEFAULT:WaitChoice = {wait_on_quota:true,wait_deadline_hours:4,wait_m
 const whole = (v:string,low:number,high:number) => Math.min(high,Math.max(low,Math.round(Number(v))||low))
 export function WaitOptions({value,onChange,id}:{value:WaitChoice|null;onChange:(v:WaitChoice|null)=>void;id:string}){
   return <div className="wait-options">
-    <label className="accept-row"><input type="checkbox" checked={!!value} onChange={e=>onChange(e.target.checked?WAIT_DEFAULT:null)}/> Kota dolarsa bekle ve otomatik yeniden dene</label>
+    <label className="accept-row"><input type="checkbox" checked={!!value} onChange={e=>onChange(e.target.checked?WAIT_DEFAULT:null)}/> {t('shared.wait.label')}</label>
     {value&&<div className="wait-limits">
-      <label htmlFor={id+'-hours'}>Son süre (saat)<input id={id+'-hours'} type="number" min={1} max={24} value={value.wait_deadline_hours} onChange={e=>onChange({...value,wait_deadline_hours:whole(e.target.value,1,24)})}/></label>
-      <label htmlFor={id+'-attempts'}>En fazla deneme<input id={id+'-attempts'} type="number" min={1} max={5} value={value.wait_max_attempts} onChange={e=>onChange({...value,wait_max_attempts:whole(e.target.value,1,5)})}/></label>
+      <label htmlFor={id+'-hours'}>{t('shared.wait.hours')}<input id={id+'-hours'} type="number" min={1} max={24} value={value.wait_deadline_hours} onChange={e=>onChange({...value,wait_deadline_hours:whole(e.target.value,1,24)})}/></label>
+      <label htmlFor={id+'-attempts'}>{t('shared.wait.attempts')}<input id={id+'-attempts'} type="number" min={1} max={5} value={value.wait_max_attempts} onChange={e=>onChange({...value,wait_max_attempts:whole(e.target.value,1,5)})}/></label>
     </div>}
     <p className="chain-note">{value
-      ?`İlk kota anından en fazla ${value.wait_deadline_hours} saat içinde en fazla ${value.wait_max_attempts} otomatik deneme (15 dk'dan başlayıp katlanan aralıklarla). Klasör beklerken değişirse otomatik devam etmez, size sorar. Kota sıfırlanması çalışmanın süreceğini garanti etmez.`
-      :'Kapalı: kota dolunca yürütme bekler; yeniden denemeyi siz başlatırsınız.'}</p>
+      ?t('shared.wait.note_on',{hours:value.wait_deadline_hours,attempts:value.wait_max_attempts})
+      :t('shared.wait.note_off')}</p>
   </div>
 }
 /** Local, short date/time for plan moments (ISO UTC from the backend). */
-export const when = (iso:string) => new Date(iso).toLocaleString('tr-TR',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})
+export const when = (iso:string) => new Date(iso).toLocaleString(locale,{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})
 export const missingProvider = (p:Policy, body:PolicyBody=p.policy) => Object.values(body.roles).some(chain=>chain.some(i=>!installedOf(p,i.provider)))
 export async function api<T>(url:string, options?:RequestInit):Promise<T> {
   return (await checkedFetch(url,options)).json()
@@ -84,14 +85,14 @@ export async function api<T>(url:string, options?:RequestInit):Promise<T> {
 export const newId = () => crypto.randomUUID()
 
 /** F3-02 loop outcomes (backend `session_loop_state.outcome`). */
-export const outcomeLabels:Record<string,string> = {verified:'İnceleyici hedefi doğruladı',reviewer_blocked:'İnceleyici engel bildirdi',
-  review_invalid:'İnceleme sonucu okunamadı',no_progress:'İlerleme yok: aynı bulgular, klasörde değişiklik görülmedi',
-  turn_limit:'Tur sınırı doldu; inceleyici hâlâ değişiklik istiyor',budget_exhausted:'Etkin süre bütçesi doldu'}
-export const verdictLabels:Record<string,string> = {pass:'Onay',changes_requested:'Değişiklik istendi',blocked:'Engel',invalid:'Okunamadı'}
-export const invalidCodes:Record<string,string> = {no_block:'sonuç bloğu yok',multiple_blocks:'birden fazla blok',unclosed_block:'blok kapanmamış',
-  trailing_text:'bloktan sonra metin var',too_large:'blok çok büyük',invalid_json:'JSON geçersiz',duplicate_key:'yinelenen alan',
-  non_finite:'NaN/Infinity',schema:'şemaya uymuyor'}
+export const outcomeLabels:Record<string,string> = {verified:t('shared.outcome.verified'),reviewer_blocked:t('shared.outcome.reviewer_blocked'),
+  review_invalid:t('shared.outcome.review_invalid'),no_progress:t('shared.outcome.no_progress'),
+  turn_limit:t('shared.outcome.turn_limit'),budget_exhausted:t('shared.outcome.budget_exhausted')}
+export const verdictLabels:Record<string,string> = {pass:t('shared.verdict.pass'),changes_requested:t('shared.verdict.changes_requested'),blocked:t('shared.verdict.blocked'),invalid:t('shared.verdict.invalid')}
+export const invalidCodes:Record<string,string> = {no_block:t('shared.invalid.no_block'),multiple_blocks:t('shared.invalid.multiple_blocks'),unclosed_block:t('shared.invalid.unclosed_block'),
+  trailing_text:t('shared.invalid.trailing_text'),too_large:t('shared.invalid.too_large'),invalid_json:t('shared.invalid.invalid_json'),duplicate_key:t('shared.invalid.duplicate_key'),
+  non_finite:t('shared.invalid.non_finite'),schema:t('shared.invalid.schema')}
 export const loopLine = (loop?:{max_turns:number;max_active_minutes:number}) => loop
-  ? `Döngü: en fazla ${loop.max_turns} tur · ${loop.max_active_minutes} dk etkin süre. İnceleyici onaylayınca biter; tamamlanabilen her turun son yazar çıktısı incelenir.`
+  ? t('shared.loop_line',{turns:loop.max_turns,minutes:loop.max_active_minutes})
   : null
-export const duration = (ms:number) => { const s=Math.round(ms/1000); return s<60?`${s} sn`:`${Math.floor(s/60)} dk ${s%60} sn` }
+export const duration = (ms:number) => { const s=Math.round(ms/1000); return s<60?t('shared.duration.sec',{s}):t('shared.duration.min_sec',{m:Math.floor(s/60),s:s%60}) }

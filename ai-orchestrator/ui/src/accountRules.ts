@@ -1,4 +1,5 @@
 /** TB-39: pure rules and types for the Mac-only Accounts card in Settings (node-testable, no fetch). */
+import { say, t } from './i18n/index.ts'
 
 export type AccountProvider = 'agy' | 'codex' | 'claude' | 'ollama'
 export type AccountRole = 'author' | 'reviewer'
@@ -42,8 +43,8 @@ export const PROVIDER_LABELS: Record<AccountProvider, string> = {
 }
 
 export const ROLE_LABELS: Record<AccountRole, string> = {
-  author: 'Yazar',
-  reviewer: 'İnceleyici',
+  author: t('settings.accounts.role.author'),
+  reviewer: t('settings.accounts.role.reviewer'),
 }
 
 export function isValidAccountName(value: string): boolean {
@@ -71,28 +72,28 @@ export function validateAccountInput(
 
   if (provider === 'agy') {
     if (!trimmed) {
-      return { ok: false, error: 'Antigravity (agy) için hesap adı zorunludur.' }
+      return { ok: false, error: t('settings.accounts.err.agyAccountRequired') }
     }
     if (!isValidAccountName(trimmed)) {
       return {
         ok: false,
-        error: 'Geçersiz hesap adı: küçük harf veya rakamla başlamalı, yalnız küçük harf, rakam ve tire içermeli (en çok 16 karakter).',
+        error: t('settings.accounts.err.invalidAccountName'),
       }
     }
   } else if (provider === 'codex') {
     if (trimmed && !isValidAccountName(trimmed)) {
       return {
         ok: false,
-        error: 'Geçersiz hesap adı: küçük harf veya rakamla başlamalı, yalnız küçük harf, rakam ve tire içermeli (en çok 16 karakter).',
+        error: t('settings.accounts.err.invalidAccountName'),
       }
     }
   } else if (trimmed) {
-    return { ok: false, error: `${PROVIDER_LABELS[provider]} için hesap adı kullanılmaz.` }
+    return { ok: false, error: t('settings.accounts.err.accountNotUsed', { provider: PROVIDER_LABELS[provider] }) }
   }
 
   const roles: AccountRole[] = (['author', 'reviewer'] as const).filter(r => rawRoles.includes(r))
   if (roles.length === 0) {
-    return { ok: false, error: 'En az bir rol (Yazar veya İnceleyici) seçilmelidir.' }
+    return { ok: false, error: t('settings.accounts.err.roleRequired') }
   }
 
   const account = providerSupportsAccount(provider) && trimmed ? trimmed : null
@@ -153,36 +154,42 @@ export function formatAccountError(err: unknown): string {
     ''
 
   if (code === 'exists') {
-    return detail ? `Bu hesap zaten kayıtlı (${detail}).` : 'Bu hesap zaten izinli listesinde mevcut.'
+    return detail ? t('settings.accounts.err.existsDetail', { detail }) : t('err.exists')
   }
   if (code === 'in_default_team') {
-    return 'Bu hesap varsayılan takımda kullanıldığı için kaldırılamaz. Önce Varsayılan takım kartından çıkarın.'
+    return t('err.in_default_team')
   }
   if (code === 'validation_error') {
     if (/en çok|max|allowed|fazla/i.test(detail)) {
-      return `İzinli hesap sınırı aşıldı: ${detail}`
+      return t('settings.accounts.err.limitExceeded', { detail })
     }
     return detail
-      ? `Geçersiz hesap bilgisi: ${detail}`
-      : 'Geçersiz hesap adı veya rol seçimi (küçük harf, rakam ve tire; en çok 16 karakter).'
+      ? t('settings.accounts.err.invalidDetail', { detail })
+      : t('err.validation_error')
   }
   if (code === 'not_found') {
-    return 'Hesap bulunamadı.'
+    return t('err.not_found')
   }
   if (code === 'policy_invalid') {
-    return detail ? `Sağlayıcı yapılandırması geçersiz: ${detail}` : 'providers.yaml dosyası okunamadı.'
+    return detail ? t('settings.accounts.err.policyInvalidDetail', { detail }) : t('err.policy_invalid')
   }
 
   const status = typeof obj.status === 'number' ? obj.status : 0
   if (status === 409) {
-    return detail || 'Bu işlem mevcut hesap veya varsayılan takım durumuyla çakışıyor.'
+    return detail || t('settings.accounts.err.conflict')
   }
   if (status === 422) {
-    return 'Geçersiz hesap adı veya rol seçimi (küçük harf, rakam ve tire; en çok 16 karakter).'
+    return t('settings.accounts.err.invalidInput')
   }
   if (status === 403) {
-    return 'Yetkisiz istek: hesap yönetimi yalnız bu Mac üzerindeki yerel panelden yapılabilir.'
+    return t('settings.accounts.err.forbidden')
   }
 
-  return detail || String(err)
+  return detail || say(err)
+}
+
+/** The server sends the login note in Turkish; known providers show it in the UI language, others as sent. */
+export function loginNote(provider: string, note: string | null): string | null {
+  const key = ({ agy: 'settings.accounts.note.agy', codex: 'settings.accounts.note.codex', claude: 'settings.accounts.note.claude' } as const)[provider as 'agy' | 'codex' | 'claude']
+  return note && key ? t(key) : note
 }

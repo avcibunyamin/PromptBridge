@@ -1,12 +1,14 @@
+import { t } from '../i18n'
+
 const STATE_LABELS: Record<string, string> = {
-  CAPTURED: 'Yakalandı',
-  PENDING_APPROVAL: 'Onay Bekliyor',
-  APPROVED: 'Onaylandı',
-  DELIVERING: 'İletiliyor',
-  DELIVERED: 'İletildi',
-  REJECTED: 'Reddedildi',
-  FAILED: 'Başarısız',
-  EXPIRED: 'Süresi Doldu',
+  CAPTURED: t('shared.badge.captured'),
+  PENDING_APPROVAL: t('shared.badge.pending_approval'),
+  APPROVED: t('shared.badge.approved'),
+  DELIVERING: t('shared.badge.delivering'),
+  DELIVERED: t('shared.badge.delivered'),
+  REJECTED: t('shared.badge.rejected'),
+  FAILED: t('shared.badge.failed'),
+  EXPIRED: t('shared.badge.expired'),
 }
 
 export function StatusBadge({ state }: { state: string }) {

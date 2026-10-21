@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { editEnvelope } from '../api'
+import { t } from '../i18n'
 
 interface Props {
   eid: string
@@ -29,7 +30,7 @@ export function ContentEditor({ eid, initialContent, disabled, onSaved }: Props)
   if (disabled) {
     return (
       <div className="editor-disabled">
-        <p className="muted">Düzenleme yalnızca <strong>Onay Bekliyor</strong> durumunda mümkündür.</p>
+        <p className="muted">{t('bridge.editor.disabledPrefix')} <strong>{t('bridge.editor.pendingApproval')}</strong> {t('bridge.editor.disabledSuffix')}</p>
       </div>
     )
   }
@@ -50,9 +51,9 @@ export function ContentEditor({ eid, initialContent, disabled, onSaved }: Props)
           onClick={handleSave}
           disabled={saving || text === initialContent}
         >
-          {saving ? 'Kaydediliyor…' : 'Düzenlenmiş sürümü kaydet'}
+          {saving ? t('bridge.editor.saving') : t('bridge.editor.save')}
         </button>
-        <span className="muted">Kayıt sonrası bu sürüm onaylanacak.</span>
+        <span className="muted">{t('bridge.editor.saveHint')}</span>
       </div>
     </div>
   )

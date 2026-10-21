@@ -1,6 +1,7 @@
 /** F3-01b review fixes (Codex, 2026-09-29): pure send/reconcile rules, testable without a browser
  *  (`npm test`). Components call these; storage is `pending.ts` (localStorage with memory fallback). */
 import { pendingMessage, pendingCreate, answered, type PendingCreate, type PendingMessage } from './pending.ts'
+import { t } from '../../i18n/index.ts'
 
 /** P2-1: the chain must be (re)accepted whenever the current policy differs from the one this work's
  *  newest message was accepted with (or there is no message yet). `latestDigest` comes from the work
@@ -94,7 +95,7 @@ export function teamPreviewer<T>(fetchPreview: (t: Team) => Promise<T>, apply: (
  *  characters (cut at a word when possible). The title stays editable. */
 export function deriveTitle(text: string, max = 60): string {
   const line = text.split('\n').map(l => l.replace(/\s+/g, ' ').trim()).find(Boolean) ?? ''
-  if (!line) return 'Yeni çalışma'
+  if (!line) return t('work.untitled')
   if (line.length <= max) return line
   const cut = line.slice(0, max - 1), space = cut.lastIndexOf(' ')
   return (space > max / 2 ? cut.slice(0, space) : cut).trimEnd() + '…'
@@ -103,7 +104,7 @@ export function deriveTitle(text: string, max = 60): string {
 /** TB-20 K2: the one-line summary of a run card: who writes and who reviews (models, not account names). */
 export function runLine(team: { author: string[]; reviewer: string[] }, label: (id: string) => string): string {
   const a = team.author[0], r = team.reviewer[0]
-  return [a && `Yazar ${label(a)}`, r && `İnceleme ${label(r)}`].filter(Boolean).join(' · ')
+  return [a && t('work.runLine.author', { model: label(a) }), r && t('work.runLine.reviewer', { model: label(r) })].filter(Boolean).join(' · ')
 }
 
 /** TB-20 K2: a run card opens by itself when it needs a person (its controls must not hide in a folded card). */

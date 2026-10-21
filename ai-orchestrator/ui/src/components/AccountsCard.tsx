@@ -17,8 +17,10 @@ import {
   type AccountProvider,
   type AccountRole,
   type AddAccountInput,
+  loginNote,
 } from '../accountRules'
 import { addAccount, listAccounts, removeAccount } from '../api'
+import { t } from '../i18n'
 import { mobile } from '../mobile'
 
 export {
@@ -89,7 +91,7 @@ export function AccountsCard({ onChanged }: { onChanged?: () => void | Promise<v
       setCopiedKey(key)
       setTimeout(() => setCopiedKey(prev => (prev === key ? null : prev)), 2000)
     } catch {
-      setError('Komut panoya kopyalanamadı; satırı seçip elle kopyalayabilirsiniz.')
+      setError(t('settings.accounts.copyError'))
     }
   }
 
@@ -143,7 +145,7 @@ export function AccountsCard({ onChanged }: { onChanged?: () => void | Promise<v
   return (
     <section className="card accounts-card">
       <div className="card-h">
-        <h2>Hesaplar</h2>
+        <h2>{t('settings.accounts.title')}</h2>
         <span className="spacer" />
         <button
           type="button"
@@ -153,14 +155,14 @@ export function AccountsCard({ onChanged }: { onChanged?: () => void | Promise<v
           onClick={() => void load()}
         >
           <RefreshCw className={loading ? 'spin' : undefined} aria-hidden />
-          {loading ? 'Yenileniyor…' : 'Yenile'}
+          {loading ? t('settings.accounts.refreshing') : t('settings.accounts.refresh')}
         </button>
       </div>
       <div className="card-b">
         <p className="muted small">
-          İzinli sağlayıcı hesaplarını (<code>providers.yaml</code>) bu Mac üzerinden yönetin.{' '}
-          <strong>Panel parolayı ya da jetonu asla istemez ve saklamaz;</strong> hesabı ekledikten sonra
-          verilen giriş komutunu kendi Terminal&apos;inizde çalıştırarak doğrudan sağlayıcı CLI&apos;ı ile oturum açarsınız.
+          {t('settings.accounts.intro')}{' '}
+          <strong>{t('settings.accounts.introLead')}</strong>{' '}
+          {t('settings.accounts.introBody')}
         </p>
 
         {error && (
@@ -172,8 +174,8 @@ export function AccountsCard({ onChanged }: { onChanged?: () => void | Promise<v
         {justAdded && (
           <div className="notice account-added-banner" role="status">
             <p>
-              <strong>{justAdded.base}</strong> eklendi.{' '}
-              <strong>Şimdi bu komutu kendi Terminal&apos;inde çalıştırıp giriş yap:</strong>
+              {t('settings.accounts.added', { base: justAdded.base })}{' '}
+              <strong>{t('settings.accounts.loginPrompt')}</strong>
             </p>
             {justAdded.login.command ? (
               <div className="mobile-cmd account-login">
@@ -183,19 +185,19 @@ export function AccountsCard({ onChanged }: { onChanged?: () => void | Promise<v
                   className="btn small"
                   onClick={() => void copyCommand(`added:${justAdded.base}`, justAdded.login.command!)}
                 >
-                  {copiedKey === `added:${justAdded.base}` ? 'Kopyalandı' : 'Kopyala'}
+                  {copiedKey === `added:${justAdded.base}` ? t('settings.accounts.copied') : t('settings.accounts.copy')}
                 </button>
               </div>
             ) : (
-              justAdded.login.note && <p className="mono small">{justAdded.login.note}</p>
+              justAdded.login.note && <p className="mono small">{loginNote(justAdded.provider, justAdded.login.note)}</p>
             )}
           </div>
         )}
 
         {!items ? (
-          <p className="loading">Yükleniyor…</p>
+          <p className="loading">{t('settings.loading')}</p>
         ) : groups.length === 0 ? (
-          <p className="muted small">Kayıtlı hesap yok.</p>
+          <p className="muted small">{t('settings.accounts.empty')}</p>
         ) : (
           <div className="accounts-groups">
             {groups.map(group => (
@@ -215,13 +217,13 @@ export function AccountsCard({ onChanged }: { onChanged?: () => void | Promise<v
                           <div className="account-badges">
                             {item.roles.includes('author') && <span className="pill">{ROLE_LABELS.author}</span>}
                             {item.roles.includes('reviewer') && <span className="pill">{ROLE_LABELS.reviewer}</span>}
-                            {item.in_default_team && <span className="pill ok">Varsayılan takımda</span>}
-                            {!item.installed && <span className="pill warn">Kurulu değil</span>}
+                            {item.in_default_team && <span className="pill ok">{t('settings.accounts.inDefaultTeam')}</span>}
+                            {!item.installed && <span className="pill warn">{t('settings.accounts.notInstalled')}</span>}
                           </div>
                           <span className="spacer" />
                           <div className="account-actions">
                             {item.in_default_team && (
-                              <span className="muted small">Varsayılan takımda olduğu için kaldırılamaz</span>
+                              <span className="muted small">{t('settings.accounts.cannotRemoveDefault')}</span>
                             )}
                             <button
                               type="button"
@@ -229,15 +231,15 @@ export function AccountsCard({ onChanged }: { onChanged?: () => void | Promise<v
                               disabled={busy || item.in_default_team}
                               title={
                                 item.in_default_team
-                                  ? 'Varsayılan takımda kullanıldığı için kaldırılamaz'
-                                  : `${item.base} hesabını kaldır`
+                                  ? t('settings.accounts.cannotRemoveDefaultTitle')
+                                  : t('settings.accounts.removeTitle', { base: item.base })
                               }
                               onClick={() => {
                                 setError('')
                                 setConfirmBase(item.base)
                               }}
                             >
-                              Kaldır
+                              {t('settings.accounts.remove')}
                             </button>
                           </div>
                         </div>
@@ -251,12 +253,12 @@ export function AccountsCard({ onChanged }: { onChanged?: () => void | Promise<v
                                 className="btn small"
                                 onClick={() => void copyCommand(item.base, item.login.command!)}
                               >
-                                {copiedKey === item.base ? 'Kopyalandı' : 'Kopyala'}
+                                {copiedKey === item.base ? t('settings.accounts.copied') : t('settings.accounts.copy')}
                               </button>
-                              {item.login.note && <span className="muted small">{item.login.note}</span>}
+                              {item.login.note && <span className="muted small">{loginNote(item.provider, item.login.note)}</span>}
                             </>
                           ) : (
-                            item.login.note && <span className="mono muted small">{item.login.note}</span>
+                            item.login.note && <span className="mono muted small">{loginNote(item.provider, item.login.note)}</span>
                           )}
                         </div>
 
@@ -265,11 +267,10 @@ export function AccountsCard({ onChanged }: { onChanged?: () => void | Promise<v
                             className="reaccept account-confirm"
                             role="dialog"
                             aria-modal="true"
-                            aria-label={`${item.base} hesabını kaldır onayı`}
+                            aria-label={t('settings.accounts.confirmRemoveAria', { base: item.base })}
                           >
                             <p className="small">
-                              <strong>{item.base}</strong> hesabını izinli sağlayıcı listesinden kaldırmak
-                              istediğinize emin misiniz? Hesabın <code>HOME</code> klasörü silinmez.
+                              {t('settings.accounts.confirmRemove', { base: item.base })}
                             </p>
                             <div className="team-actions">
                               <button
@@ -279,7 +280,7 @@ export function AccountsCard({ onChanged }: { onChanged?: () => void | Promise<v
                                 onClick={() => void handleRemove(item.base)}
                               >
                                 {busy ? <LoaderCircle className="spin" aria-hidden /> : null}
-                                Evet, kaldır
+                                {t('settings.accounts.confirmYes')}
                               </button>
                               <button
                                 type="button"
@@ -287,7 +288,7 @@ export function AccountsCard({ onChanged }: { onChanged?: () => void | Promise<v
                                 disabled={busy}
                                 onClick={() => setConfirmBase(null)}
                               >
-                                Vazgeç
+                                {t('settings.accounts.confirmCancel')}
                               </button>
                             </div>
                           </div>
@@ -302,10 +303,10 @@ export function AccountsCard({ onChanged }: { onChanged?: () => void | Promise<v
         )}
 
         <form className="account-form form-fields" onSubmit={e => void handleAdd(e)}>
-          <h3 className="accounts-group-title">Hesap ekle</h3>
+          <h3 className="accounts-group-title">{t('settings.accounts.addTitle')}</h3>
           <div className="team-selects">
             <label htmlFor="acc-provider">
-              Sağlayıcı
+              {t('settings.accounts.provider')}
               <select
                 id="acc-provider"
                 value={provider}
@@ -324,7 +325,7 @@ export function AccountsCard({ onChanged }: { onChanged?: () => void | Promise<v
             </label>
 
             <label htmlFor="acc-name">
-              Hesap adı {requiresAccount ? '(zorunlu)' : supportsAccount ? '(isteğe bağlı)' : '(kullanılmaz)'}
+              {t('settings.accounts.accountName')} {requiresAccount ? t('settings.accounts.accountRequired') : supportsAccount ? t('settings.accounts.accountOptional') : t('settings.accounts.accountUnused')}
               <input
                 id="acc-name"
                 className="mono"
@@ -333,18 +334,18 @@ export function AccountsCard({ onChanged }: { onChanged?: () => void | Promise<v
                 maxLength={16}
                 placeholder={
                   requiresAccount
-                    ? 'hesap1 (küçük harf/rakam/tire, en çok 16)'
+                    ? t('settings.accounts.placeholderRequired')
                     : supportsAccount
-                      ? 'varsayılan için boş bırakın veya hesap2'
-                      : 'Bu sağlayıcıda hesap adı yok'
+                      ? t('settings.accounts.placeholderOptional')
+                      : t('settings.accounts.placeholderUnused')
                 }
                 onChange={e => setAccount(e.target.value)}
               />
             </label>
           </div>
 
-          <div className="account-roles" role="group" aria-label="Roller">
-            <span className="account-roles-label">Roller:</span>
+          <div className="account-roles" role="group" aria-label={t('settings.accounts.rolesAria')}>
+            <span className="account-roles-label">{t('settings.accounts.rolesLabel')}</span>
             <label className="account-role-check">
               <input
                 type="checkbox"
@@ -352,7 +353,7 @@ export function AccountsCard({ onChanged }: { onChanged?: () => void | Promise<v
                 disabled={busy}
                 onChange={e => toggleRole('author', e.target.checked)}
               />
-              <span>Yazar</span>
+              <span>{t('settings.accounts.role.author')}</span>
             </label>
             <label className="account-role-check">
               <input
@@ -361,18 +362,17 @@ export function AccountsCard({ onChanged }: { onChanged?: () => void | Promise<v
                 disabled={busy}
                 onChange={e => toggleRole('reviewer', e.target.checked)}
               />
-              <span>İnceleyici</span>
+              <span>{t('settings.accounts.role.reviewer')}</span>
             </label>
           </div>
 
           <div className="form-footer">
             <span className="hint small">
-              Antigravity (<code>agy</code>) için hesap adı zorunludur (küçük harf, rakam, tire; en çok 16 karakter)
-              ve ayrı bir <code>HOME</code> + anahtar zinciri hazırlanır.
+              {t('settings.accounts.agyHint')}
             </span>
             <button type="submit" className="btn primary" disabled={busy}>
               {busy ? <LoaderCircle className="spin" aria-hidden /> : null}
-              Hesap ekle
+              {t('settings.accounts.addTitle')}
             </button>
           </div>
         </form>

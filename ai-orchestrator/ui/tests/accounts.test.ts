@@ -109,3 +109,11 @@ test('TB-39: formatAccountError translates exists, in_default_team, and validati
   const invalidErr = { status: 422, code: 'validation_error', body: { detail: { code: 'validation_error', detail: 'agy için geçerli bir hesap adı zorunludur' } } }
   assert.match(formatAccountError(invalidErr), /Geçersiz hesap bilgisi/)
 })
+
+test('loginNote shows known providers in the UI language and passes others through', async () => {
+  const { loginNote } = await import('../src/accountRules.ts')
+  assert.equal(loginNote('agy', 'Ayrı HOME ve anahtar zinciri ile giriş'), 'Ayrı HOME ve anahtar zinciri ile giriş')
+  assert.equal(loginNote('codex', 'x'), 'Ayrı CODEX_HOME ile giriş')
+  assert.equal(loginNote('ollama', 'ollama serve'), 'ollama serve')
+  assert.equal(loginNote('agy', null), null)
+})

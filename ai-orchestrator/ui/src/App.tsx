@@ -10,6 +10,7 @@ import { SettingsPage } from './components/SettingsPage'
 import { loadSettings, resolveTheme, saveSettings, type Theme } from './settings'
 import { PairScreen } from './components/PairScreen'
 import { canCommand, detectMode, events, loadToken, mobile, onUnauthorized, withAuth, type Mode } from './mobile'
+import { t } from './i18n'
 
 type StateFilter = 'ALL' | 'PENDING_APPROVAL' | 'DELIVERED' | 'REJECTED' | 'FAILED'
 /** F3-06: what the server runs and serves (GET /health). */
@@ -24,12 +25,12 @@ export default function App() {
     setMode(m)
   }) }, [])
   useEffect(() => onUnauthorized(() => { mobile.active = false; setMode({ kind: 'pair' }) }), [])
-  if (!mode) return <p className="loading">Yükleniyor…</p>
+  if (!mode) return <p className="loading">{t('shell.loading')}</p>
   if (mode.kind === 'pair') return <PairScreen />
   return <Shell />
 }
 
-const PAGES: Record<View, string> = { overview: 'Genel bakış', work: 'Çalışmalar', bridge: 'Onaylar', settings: 'Ayarlar' }
+const PAGES: Record<View, string> = { overview: t('shell.nav.overview'), work: t('shell.nav.work'), bridge: t('shell.nav.bridge'), settings: t('shell.nav.settings') }
 const firstView = () => initialView(location.hash, matchMedia('(max-width: 600px)').matches)
 
 function Shell() {
@@ -69,11 +70,11 @@ function Shell() {
     {/* K-040: ZeroCost's desktop sidebar — where it runs, then the control centre's sections, then recent works */}
     <div className="host-card d-only" title={location.host}>
       <span className="host-mono">P</span>
-      <span><strong>Bu Mac</strong><span role="status">{version ? 'Yerel sunucu bağlı' : 'Bağlantı bekleniyor'}</span></span>
+      <span><strong>{t('shell.host.thisMac')}</strong><span role="status">{version ? t('shell.host.connected') : t('shell.host.waiting')}</span></span>
       <span className={'status-dot' + (version ? ' online' : '')} aria-hidden />
     </div>
-    <p className="nav-label d-only">KONTROL MERKEZİ</p>
-    <nav className="nav-main d-only" aria-label="Kontrol merkezi">
+    <p className="nav-label d-only">{t('shell.nav.controlCenterUpper')}</p>
+    <nav className="nav-main d-only" aria-label={t('shell.nav.controlCenter')}>
       {item('overview', <LayoutDashboard aria-hidden />)}
       {item('work', <MessagesSquare aria-hidden />)}
       {item('bridge', <FileCheck2 aria-hidden />, waiting ? <span className="nav-count">{waiting}</span> : undefined)}
@@ -81,21 +82,21 @@ function Shell() {
     </nav>
   </>
   const top = <header className="topbar d-only">
-    <div className="crumbs"><span>Kontrol merkezi</span><ChevronRight aria-hidden /><strong>{PAGES[view]}</strong></div>
+    <div className="crumbs"><span>{t('shell.nav.controlCenter')}</span><ChevronRight aria-hidden /><strong>{PAGES[view]}</strong></div>
     <div className="topbar-right">
-      <span className={'status-dot' + (version ? ' online' : '')} aria-hidden /><span role="status">{version ? 'Yerel sunucu bağlı' : 'Bağlantı bekleniyor'}</span>
+      <span className={'status-dot' + (version ? ' online' : '')} aria-hidden /><span role="status">{version ? t('shell.host.connected') : t('shell.host.waiting')}</span>
       <span className="top-divider" aria-hidden />
-      <button className="icon-btn plain" aria-label="Yeniden yükle" title="Paneli yeniden yükle" onClick={() => location.reload()}><RefreshCw aria-hidden /></button>
+      <button className="icon-btn plain" aria-label={t('shell.reload.label')} title={t('shell.reload.title')} onClick={() => location.reload()}><RefreshCw aria-hidden /></button>
     </div>
   </header>
-  const foot = <nav className="side-nav" aria-label="Uygulama bölümleri">
+  const foot = <nav className="side-nav" aria-label={t('shell.nav.sectionsLabel')}>
     {/* ≤600px: a bottom tab bar; this tab opens the work list (hidden on wide screens, where the list is always there) */}
-    <button className="m-only" aria-current={view === 'work' ? 'page' : undefined} onClick={() => open('work')}>Çalışmalar</button>
-    <button aria-current={view === 'bridge' ? 'page' : undefined} onClick={() => open(view === 'bridge' ? 'work' : 'bridge')}>Onaylar{waiting ? <span className="count">{waiting}</span> : null}</button>
-    <button aria-current={view === 'settings' ? 'page' : undefined} onClick={() => open(view === 'settings' ? 'work' : 'settings')}>Ayarlar</button>
+    <button className="m-only" aria-current={view === 'work' ? 'page' : undefined} onClick={() => open('work')}>{t('shell.nav.work')}</button>
+    <button aria-current={view === 'bridge' ? 'page' : undefined} onClick={() => open(view === 'bridge' ? 'work' : 'bridge')}>{t('shell.nav.bridge')}{waiting ? <span className="count">{waiting}</span> : null}</button>
+    <button aria-current={view === 'settings' ? 'page' : undefined} onClick={() => open(view === 'settings' ? 'work' : 'settings')}>{t('shell.nav.settings')}</button>
     <div className="side-meta">
-      <button className="icon-btn" aria-label={shown === 'dark' ? 'Açık temaya geç' : 'Koyu temaya geç'} title="Tema değiştir" onClick={toggleTheme}>{shown === 'dark' ? '☀' : '☾'}</button>
-      {version && <span className="host mono" title={`Çalışan kod · veritabanı şeması · sunulan panel · ${location.host}`}>{version.commit} · şema {version.schema ?? '?'}</span>}
+      <button className="icon-btn" aria-label={shown === 'dark' ? t('shell.theme.toLight') : t('shell.theme.toDark')} title={t('shell.theme.toggleTitle')} onClick={toggleTheme}>{shown === 'dark' ? '☀' : '☾'}</button>
+      {version && <span className="host mono" title={t('shell.version.title', { host: location.host })}>{t('shell.version.label', { commit: version.commit, schema: version.schema ?? '?' })}</span>}
     </div>
   </nav>
   return <div className="product-shell">
@@ -161,13 +162,13 @@ function BridgePanel() {
   return (
     <div className="app">
       <header className="app-header">
-        <span className="app-title">Dosya onayları</span>
+        <span className="app-title">{t('shell.bridge.title')}</span>
         <div className="app-actions">
-          {!mobile.active && <button className="btn-ghost" onClick={handleReconcile} title="İletiliyor durumunda kalan kayıtları uzlaştır">
-            Uzlaştır
+          {!mobile.active && <button className="btn-ghost" onClick={handleReconcile} title={t('shell.bridge.reconcileTitle')}>
+            {t('shell.bridge.reconcile')}
           </button>}
           <span className={`live-indicator ${live ? 'live' : 'offline'}`} role="status">
-            {live ? '● Canlı' : '○ Bağlantı yok'}
+            {live ? t('shell.bridge.live') : t('shell.bridge.offline')}
           </span>
         </div>
       </header>
@@ -175,13 +176,13 @@ function BridgePanel() {
       {error && (
         <div className="error-banner" role="alert">
           ⚠ {error}
-          <button type="button" aria-label="Hatayı kapat" onClick={() => setError(null)}>✕</button>
+          <button type="button" aria-label={t('shell.bridge.dismissError')} onClick={() => setError(null)}>✕</button>
         </div>
       )}
 
       <div className="app-body">
         <aside className="sidebar">
-          <div className="filter-bar" role="group" aria-label="Zarf durumu filtresi">
+          <div className="filter-bar" role="group" aria-label={t('shell.bridge.filterLabel')}>
             {(['ALL', 'PENDING_APPROVAL', 'DELIVERED', 'REJECTED', 'FAILED'] as StateFilter[]).map(s => (
               <button
                 key={s}
@@ -189,13 +190,13 @@ function BridgePanel() {
                 aria-pressed={filter === s}
                 onClick={() => setFilter(s)}
               >
-                {({ALL:'Tümü',PENDING_APPROVAL:'Onay bekliyor',DELIVERED:'İletildi',REJECTED:'Reddedildi',FAILED:'Hata'})[s]}
+                {({ALL:t('shell.bridge.filterAll'),PENDING_APPROVAL:t('shell.bridge.filterPending'),DELIVERED:t('shell.bridge.filterDelivered'),REJECTED:t('shell.bridge.filterRejected'),FAILED:t('shell.bridge.filterFailed')})[s]}
                 {s !== 'ALL' && counts[s] ? ` (${counts[s]})` : ''}
               </button>
             ))}
           </div>
           {loading
-            ? <p className="loading">Yükleniyor…</p>
+            ? <p className="loading">{t('shell.loading')}</p>
             : <EnvelopeList
                 envelopes={filter === 'ALL' ? envelopes : envelopes.filter(env => env.state === filter)}
                 selectedId={selectedId}
@@ -211,7 +212,7 @@ function BridgePanel() {
                 onAction={() => { refresh(); }}
               />
             : <div className="empty-state">
-                <p>Listeden bir zarf seçin.</p>
+                <p>{t('shell.bridge.selectEnvelope')}</p>
               </div>}
         </main>
       </div>

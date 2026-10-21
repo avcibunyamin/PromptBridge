@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { mobile } from '../mobile'
+import { locale, t } from '../i18n'
 import { api } from './work/shared'
 import { agyFamilyLabel, agyGroups, baseOf, effortLabel, modelLabel, type Catalog, type CatalogEntry } from './work/team'
 
-const errors: Record<string, string> = { unauthenticated: 'Giriş yok', timeout: 'Zaman aşımı', unavailable: 'Liste alınamadı', cleanup_unverified: 'Liste alınamadı' }
+const errors: Record<string, string> = { unauthenticated: t('settings.models.err.unauthenticated'), timeout: t('settings.models.err.timeout'), unavailable: t('settings.models.err.unavailable'), cleanup_unverified: t('settings.models.err.unavailable') }
 
 /** K-041: the current models per provider and account (agy as family + efforts), as the pickers offer them. */
 export function ModelsCard({ efforts, bases: allowed }: { efforts: Record<string, string[]>; bases: string[] }) {
@@ -27,22 +28,22 @@ export function ModelsCard({ efforts, bases: allowed }: { efforts: Record<string
     return list.map(e => ({ key: e.model, label: modelLabel(catalog, base, e.model), status: e.status,
       efforts: e.source === 'live' || e.efforts.length ? e.efforts : (efforts[e.provider] ?? []) }))   // a live list is the authority
   }
-  return <section className="card"><div className="card-h"><h2>Modeller</h2><span className="spacer" />
-    {catalog?.checked_at && <span className="muted small">{new Date(catalog.checked_at * 1000).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}</span>}
-    {!mobile.active && <button className="btn small" disabled={busy} aria-busy={busy} onClick={() => void refresh()} title="agy models ve Codex model listesi (model çağrısı yok)">
-      <RefreshCw className={busy ? 'spin' : undefined} aria-hidden />{busy ? 'Yenileniyor…' : 'Yenile'}</button>}</div>
+  return <section className="card"><div className="card-h"><h2>{t('settings.models.title')}</h2><span className="spacer" />
+    {catalog?.checked_at && <span className="muted small">{new Date(catalog.checked_at * 1000).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })}</span>}
+    {!mobile.active && <button className="btn small" disabled={busy} aria-busy={busy} onClick={() => void refresh()} title={t('settings.models.refreshTitle')}>
+      <RefreshCw className={busy ? 'spin' : undefined} aria-hidden />{busy ? t('settings.models.refreshing') : t('settings.models.refresh')}</button>}</div>
     <div className="card-b">
-      <p className="muted small">Takım seçicilerinin sunduğu güncel modeller. Sunucu açılışta listeyi kendisi yeniler. Claude CLI liste vermez; modelleri bilinen listedir ve çalışan model her adımda doğrulanır.</p>
+      <p className="muted small">{t('settings.models.intro')}</p>
       {error && <p className="error-banner" role="alert">{error}</p>}
-      {!catalog ? <p className="loading">Yükleniyor…</p> : <div className="models-grid">
+      {!catalog ? <p className="loading">{t('settings.loading')}</p> : <div className="models-grid">
         {[...bases].sort(([a], [b]) => a.localeCompare(b)).map(([base, list]) => <div className="models-base" key={base}>
           <p className="models-title mono">{base}{catalog.errors[base] && <span className="pill warn">{errors[catalog.errors[base]] ?? catalog.errors[base]}</span>}</p>
           <ul>{rows(base, list).map(r => <li key={r.key}>
             <span className={r.status === 'unsupported' ? 'muted' : undefined}>{r.label}</span>
-            <span className="models-efforts">{r.status === 'unsupported' ? <span className="pill bad">Araç desteği yok</span>
+            <span className="models-efforts">{r.status === 'unsupported' ? <span className="pill bad">{t('settings.models.unsupported')}</span>
               : r.efforts.map(ef => <span key={ef} className="chip-efor">{effortLabel(ef)}</span>)}</span>
           </li>)}</ul>
-          {!list.length && !catalog.errors[base] && <p className="muted small">Liste henüz yok.</p>}
+          {!list.length && !catalog.errors[base] && <p className="muted small">{t('settings.models.empty')}</p>}
         </div>)}
       </div>}
     </div></section>

@@ -10,6 +10,7 @@ import { startWork, resumeCreated, discardCreate, deriveTitle } from './flows'
 import { hasNativeFolderPicker, installFolderSelectedListener, requestNativeFolder } from './nativeBridge'
 import { mobile } from '../../mobile'
 import { acceptedDigest, defaultTeam, loadSettings, type SettingsView } from '../../settings'
+import { t } from '../../i18n'
 
 /** New work = create the work (idempotent id), then its first message (idempotent id).
  *  If the message fails after the work exists, the work is kept and opened; its view retries the same message id. */
@@ -24,7 +25,7 @@ export function NewWorkForm({onCreated,folders}:{onCreated:(workId:string)=>void
     if(canSelectFolder){requestNativeFolder(window);return}
     setChoosing(true);setError('')
     try{const r=await api<{path:string|null;cancelled:boolean;error:string|null}>('/api/system/choose-folder',{method:'POST'})
-      if(r.path)setWorkspace(r.path);else if(r.error)setError(`Klasör penceresi açılamadı (${r.error}); yolu elle yazabilirsiniz.`)}
+      if(r.path)setWorkspace(r.path);else if(r.error)setError(t('work.new.folderDialogFailed',{error:r.error}))}
     catch(e){setError(String(e))}finally{setChoosing(false)}
   }
   const [isolate,setIsolate]=useState(false)   // TB-26 (K-034): run in a git worktree; the folder itself stays untouched
@@ -59,16 +60,16 @@ export function NewWorkForm({onCreated,folders}:{onCreated:(workId:string)=>void
     }
     if(r.kind==='create_rejected'){setPending(null);setError(String(r.error))
       if(r.error instanceof ApiError&&r.error.status===409){setAcceptedFor(null);void loadPolicy()}}
-    else setError('Çalışmanın oluşturulup oluşturulmadığı bilinmiyor. Aynı kimlikle yeniden deneyin; iki kez oluşmaz.')
+    else setError(t('work.new.createUncertain'))
   }
   async function discard(p:PendingCreate){
     setBusy(true);setError('')
     const r=await discardCreate(p,getWork)
     setBusy(false)
     if(r==='discarded'){setPending(null);return}
-    if(r==='kept'){setError('Sunucuya ulaşılamadı; kayıt korunuyor. Bağlantı gelince yeniden deneyin ya da tekrar silmeyi deneyin.');return}
+    if(r==='kept'){setError(t('work.new.discardKept'));return}
     // It was created after all; its first message was never sent. Open it with the text in the composer.
-    rejectedFirst.set(p.client_work_id,{text:p.message.text,message:'Çalışma oluşturulmuştu; ilk görev gönderilmedi. Metni kontrol edip gönderin.',team:p.message.team})
+    rejectedFirst.set(p.client_work_id,{text:p.message.text,message:t('work.new.createdNotSent'),team:p.message.team})
     onCreated(p.client_work_id)
   }
   // TB-19 K1: the default team saved in Settings was accepted there; another selection needs the box.
@@ -82,62 +83,62 @@ export function NewWorkForm({onCreated,folders}:{onCreated:(workId:string)=>void
 
   // K-041: `/` shortcuts in the first message (none starts the work); a hook, so before the early return (React #310)
   const commands:SlashCommand[]=[
-    ...(!mobile.active?[{name:'klasor',hint:'Finder\'dan proje klasörü',run:()=>void chooseFolder()},
-      {name:'github',hint:'GitHub\'dan klonla',run:()=>setFromGitHub(true)}]:[]),
-    {name:'model',hint:'Yazarın modelini seç',run:()=>openSelect('Yazar model','Yazar sağlayıcı')},
-    {name:'efor',hint:'Yazarın eforunu seç',run:()=>openSelect('Yazar efor','Yazar model','Yazar sağlayıcı')},
-    {name:'kota',hint:'Context ve kota penceresi',run:click('.composer .usage-ring')},
-    {name:'takim',hint:'Gelişmiş: yedekler ve inceleyici',run:click('.composer .composer-tools')},
+    ...(!mobile.active?[{name:'klasor',hint:t('work.cmd.folder'),run:()=>void chooseFolder()},
+      {name:'github',hint:t('work.cmd.clone'),run:()=>setFromGitHub(true)}]:[]),
+    {name:'model',hint:t('work.cmd.model'),run:()=>openSelect(t('session.team.field.modelAria',{name:t('session.role.author')}),t('session.team.field.providerAria',{name:t('session.role.author')}))},
+    {name:'efor',hint:t('work.cmd.effort'),run:()=>openSelect(t('session.team.field.effortAria',{name:t('session.role.author')}),t('session.team.field.modelAria',{name:t('session.role.author')}),t('session.team.field.providerAria',{name:t('session.role.author')}))},
+    {name:'kota',hint:t('work.cmd.quotaContext'),run:click('.composer .usage-ring')},
+    {name:'takim',hint:t('work.cmd.team'),run:click('.composer .composer-tools')},
   ]
   const slash=useSlash(task,setTask,commands)
   if(pending)return <div className="work-form">
-    <div className="run-head"><div><span className="eyebrow">YENİ ÇALIŞMA</span><h1>{pending.title}</h1><p className="path">{pending.workspace_path}</p></div></div>
+    <div className="run-head"><div><span className="eyebrow">{t('work.new.eyebrow')}</span><h1>{pending.title}</h1><p className="path">{pending.workspace_path}</p></div></div>
     {error&&<div className="error-banner" role="alert">{error}</div>}
     <section className="card"><div className="card-b form-fields">
-      <p className="notice">Önceki oluşturma isteğinin sonucu bilinmiyor. İstek bu tarayıcıda yerel olarak saklandı; aynı kimlikle yeniden denendiğinde iki çalışma oluşmaz. İçerik değiştirilemez.</p>
+      <p className="notice">{t('work.new.pendingNotice')}</p>
       <p className="message-text">{pending.message.text}</p>
-      <div className="form-footer"><button className="btn" disabled={busy} onClick={()=>void discard(pending)}>Yerel kaydı sil</button>
-        <button className="btn primary" disabled={busy} onClick={()=>void run(pending)}>{busy?'Deneniyor…':'Aynı isteği yeniden dene'}</button></div>
+      <div className="form-footer"><button className="btn" disabled={busy} onClick={()=>void discard(pending)}>{t('work.discardLocalRecord')}</button>
+        <button className="btn primary" disabled={busy} onClick={()=>void run(pending)}>{busy?t('work.new.retrying'):t('work.new.retrySameRequest')}</button></div>
     </div></section>
   </div>
 
-  const chain=sel?`Yazar ${sel.team.author.join(' → ')} · İnceleme ${sel.team.reviewer.join(' → ')}`:''
+  const chain=sel?t('work.new.chainLine',{author:sel.team.author.join(' → '),reviewer:sel.team.reviewer.join(' → ')}):''
   // TB-20: a chat-like start: folder, first message, the composer's model picker; the title comes from the message (K1).
   // K-039: a round start button at the bar's right end, like Claude's send
   const startButton=<button className="btn primary send round" disabled={busy||!workspace.trim()||!task.trim()||!policy||!preview||!accepted||missingProvider(policy,preview.policy)}
-    aria-label={busy?'Başlatılıyor':'Başlat'} title="Başlat">{busy?<LoaderCircle className="spin" aria-hidden/>:<ArrowUp aria-hidden/>}</button>
+    aria-label={busy?t('work.new.starting'):t('work.new.start')} title={t('work.new.start')}>{busy?<LoaderCircle className="spin" aria-hidden/>:<ArrowUp aria-hidden/>}</button>
   return <form className="work-form new-chat" onSubmit={e=>{e.preventDefault();submit()}}>
-    <div className="new-chat-head"><h1>Ne yapmak istiyorsun?</h1>
-      <p className="intro">Bir klasör seç ve yaz. Yazar değişikliği yapar, inceleyici kontrol eder; sonuç burada sohbet gibi akar.</p></div>
+    <div className="new-chat-head"><h1>{t('work.new.heading')}</h1>
+      <p className="intro">{t('work.new.intro')}</p></div>
     {error&&<div className="error-banner" role="alert">{error}</div>}
     <div className="composer new-composer">
       <div className="folder-row">
-        <label htmlFor="nw-workspace" className="sr-only">Çalışma klasörü</label>
+        <label htmlFor="nw-workspace" className="sr-only">{t('work.new.folderLabel')}</label>
         {folders?<select id="nw-workspace" className="mono" required value={workspace} onChange={e=>setWorkspace(e.target.value)}>
-          <option value="">{folders.length?'Proje klasörü seç':'Önce Mac\'ten bir çalışma açın'}</option>
+          <option value="">{folders.length?t('work.new.pickFolder'):t('work.new.openOnMacFirst')}</option>
           {folders.map(f=><option key={f} value={f}>{f.split('/').pop()||f}</option>)}</select>:<>
         {!mobile.active&&<button type="button" className="btn small folder-pick" disabled={choosing} aria-busy={choosing} onClick={()=>void chooseFolder()}>
-          {choosing?<LoaderCircle className="spin" aria-hidden/>:<FolderOpen aria-hidden/>}{workspace?'Değiştir':'Finder\'dan seç'}</button>}
-        <input id="nw-workspace" className="mono" required value={workspace} onChange={e=>setWorkspace(e.target.value)} placeholder={mobile.active?'Klasör — /Users/…/Projem':'Klasör seçin ya da yolu yazın'}/>
-        <button type="button" className="btn small" aria-expanded={fromGitHub} onClick={()=>setFromGitHub(v=>!v)}>GitHub'dan</button></>}
+          {choosing?<LoaderCircle className="spin" aria-hidden/>:<FolderOpen aria-hidden/>}{workspace?t('work.new.change'):t('work.new.pickFromFinder')}</button>}
+        <input id="nw-workspace" className="mono" required value={workspace} onChange={e=>setWorkspace(e.target.value)} placeholder={mobile.active?t('work.new.folderPlaceholderMobile'):t('work.new.folderPlaceholder')}/>
+        <button type="button" className="btn small" aria-expanded={fromGitHub} onClick={()=>setFromGitHub(v=>!v)}>{t('work.new.fromGitHub')}</button></>}
       </div>
       {fromGitHub&&<RepoPicker onClose={()=>setFromGitHub(false)} onPicked={path=>{setWorkspace(path);setFromGitHub(false)}}/>}
-      <label htmlFor="nw-task" className="sr-only">İlk görev</label>
+      <label htmlFor="nw-task" className="sr-only">{t('work.firstTask')}</label>
       <div className="slash-anchor"><textarea id="nw-task" required rows={5} maxLength={100000} value={task} onChange={e=>setTask(e.target.value)}
-        onKeyDown={e=>{slash.onKeyDown(e)}} placeholder="Neyi tamamlamamızı istiyorsun? (/ ile kısayollar)"/>{slash.menu}</div>
+        onKeyDown={e=>{slash.onKeyDown(e)}} placeholder={t('work.new.taskPlaceholder')}/>{slash.menu}</div>
       {policy&&settings!==undefined?<TeamPicker compact policy={policy} initial={defaultTeam(settings)??teamOf(policy.policy)} onReloadPolicy={loadPolicy}
-        onChange={s=>{setSel(s);if(!s.preview)setAcceptedFor(null)}} trailing={startButton}/>:<p className="muted small">{policy||!error?'Yükleniyor…':'Politika yüklenemedi.'}</p>}
+        onChange={s=>{setSel(s);if(!s.preview)setAcceptedFor(null)}} trailing={startButton}/>:<p className="muted small">{policy||!error?t('work.new.loading'):t('work.new.policyLoadFailed')}</p>}
       {preview&&!byDefault&&<label className="accept-row confirm-line"><input type="checkbox" checked={accepted} onChange={e=>setAcceptedFor(e.target.checked?preview.digest:null)}/>
-        <span>Bu çalışma şu takımla başlayacak: <span className="reaccept-chain">{chain}</span>. Takımı, otomatik kota devrini{preview.policy.loop?', döngü bütçesini':''} ve bağlam devam sınırını kabul ediyorum.</span></label>}
+        <span>{t('work.new.acceptLead')} <span className="reaccept-chain">{chain}</span>{t('work.new.acceptTail',{loop:preview.policy.loop?t('work.new.acceptLoopPart'):''})}</span></label>}
       <label className="accept-row"><input type="checkbox" checked={isolate} onChange={e=>setIsolate(e.target.checked)}/>
-        <span><strong>Ayrı kopyada çalış</strong> (git deposu): ajanlar klasörün bir kopyasında, kendi dalında çalışır; klasörün kendisine dokunulmaz. Sonucu sonra “Ana klasöre getir” ya da GitHub ile alırsınız. Kaydedilmemiş değişiklikler kopyaya geçmez.</span></label>
-      <details className="composer-more"><summary>Seçenekler</summary>
+        <span><strong>{t('work.new.isolateTitle')}</strong> {t('work.new.isolateBody')}</span></label>
+      <details className="composer-more"><summary>{t('work.new.options')}</summary>
         <WaitOptions id="nw-wait" value={wait} onChange={setWait}/>
-        <p className="chain-note">Yalnız doğrulanmış kota hatasında sıradaki sağlayıcı devralır. Her sağlayıcının kök denemesi bir kez açılır. Codex bağlamı tükenirse aynı adımda ortak en fazla {(preview?.policy??policy?.policy)?.max_context_continuations??0} ek oturum açılır; kota devri bu sayacı sıfırlamaz.</p>
+        <p className="chain-note">{t('work.new.chainNote',{count:(preview?.policy??policy?.policy)?.max_context_continuations??0})}</p>
         {loopLine(preview?.policy.loop)&&<p className="chain-note"><strong>{loopLine(preview?.policy.loop)}</strong></p>}
-        <p className="hint">Klasör kilidi yalnız PromptBridge çalışmalarını kapsar; dış editörleri veya ajanları engellemez.</p>
+        <p className="hint">{t('work.new.folderLockHint')}</p>
       </details>
-      <div className="composer-foot"><span className="muted small" title="Başlık ilk mesajdan; sonra değiştirilebilir">{task.trim()?`Başlık: ${deriveTitle(task)}`:''}</span>
+      <div className="composer-foot"><span className="muted small" title={t('work.new.titleHint')}>{task.trim()?t('work.new.titlePreview',{title:deriveTitle(task)}):''}</span>
         {!(policy&&settings!==undefined)&&startButton}</div>
     </div>
   </form>

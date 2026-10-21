@@ -2,6 +2,7 @@ import { canInterrupt, mobile } from '../../mobile'
 import { events } from '../../mobile'
 import { useEffect, useState } from 'react'
 import { ApiError } from '../../api'
+import { t } from '../../i18n'
 import { LoopView, type Loop, type Turn } from './LoopView'
 import { Pill, Provider, Chains, RECOVERED, active, labels, contextLabels, reasonLabels, resumeReasons, promptFormats, promptRejections, api, Modal, when, type Policy } from './shared'
 
@@ -13,10 +14,10 @@ type ProjectInstructions = {status:'absent'|'included'|'rejected';reason:string|
 type WaitPlan = {id:string;status:'PENDING'|'FIRED'|'CANCELLED'|'EXPIRED';next_retry_at:string;deadline:string;attempts_so_far:number;max_attempts:number;closed_reason:string|null;resets_at:string|null}
 type Detail = {session:Session; steps:Step[]; attempts:Attempt[]; policy:Policy['policy']|null; project_instructions?:ProjectInstructions|null; agents_instructions?:ProjectInstructions|null; loop?:Loop; turns?:Turn[]; wait_plan?:WaitPlan|null}
 const WAIT_EVENTS = ['wait_planned','wait_fired','wait_expired','wait_cancelled','wait_rescheduled','wait_workspace_changed']
-const waitEnds:Record<string,string> = {max_retries_exceeded:'en fazla deneme sayısına ulaşıldı',retry_deadline_exceeded:'bekleme son süresi doldu',
-  human_retry:'yeniden denemeyi siz başlattınız',workspace_changed:'klasör beklerken değişti',cancelled_by_user:'bekleme iptal edildi',
-  recovery_required:'önceki sürecin temizliği doğrulanamadı; önce kurtarın',no_failed_step:'yeniden denenecek adım yok',
-  session_not_waiting:'yürütme artık beklemiyordu',session_not_retryable:'yürütme yeniden denenebilir durumda değildi'}
+const waitEnds:Record<string,string> = {max_retries_exceeded:t('session.waitEnd.maxRetries'),retry_deadline_exceeded:t('session.waitEnd.deadline'),
+  human_retry:t('session.waitEnd.humanRetry'),workspace_changed:t('session.waitEnd.workspaceChanged'),cancelled_by_user:t('session.waitEnd.cancelled'),
+  recovery_required:t('session.waitEnd.recoveryRequired'),no_failed_step:t('session.waitEnd.noFailedStep'),
+  session_not_waiting:t('session.waitEnd.notWaiting'),session_not_retryable:t('session.waitEnd.notRetryable')}
 // F3-02 loop events: the loop card re-reads the backend detail when any of these arrive.
 const LOOP_EVENTS = ['turn_started','review_parsed','review_invalid','loop_stopped','pause_requested','paused','resumed','resume_rejected','pause_superseded']
 type Handoff = {id:string;step_id:string;from:string;to:string;reason:string}
@@ -28,14 +29,14 @@ type Resume = {decision:'RESUME'|'FRESH';reason:string}
 type PromptMeta = {format?:string;history?:{truncated?:boolean}}
 type Rejected = {reason?:string;bytes?:number;limit?:number;mandatory_bytes?:number}
 // TB-02: why a human retry was refused (backend RetryNotAllowed codes).
-const retryRefusals:Record<string,string> = {session_not_retryable:'Bu yürütme yeniden denenebilir durumda değil (durum değişmiş olabilir).',
-  workspace_busy:'Klasör başka bir yürütmede kullanılıyor ya da kilitli; o bitince yeniden deneyin.',
-  recovery_required:'Önceki sürecin temizliği doğrulanamadı; önce kurtarın.',no_failed_step:'Yeniden denenecek başarısız adım yok.',
-  context_budget_exhausted:'Bu yürütme için kabul edilen bağlam devam hakkı bitti; yeniden deneme yeni hak açmaz.'}
-const instructionReasons:Record<string,string> = {import_invalid_path:'import yolunda kontrol karakteri var',import_absolute:'mutlak import yolu kullanılamaz',import_home:'~ ile başlayan import kullanılamaz',
-  import_outside_workspace:'import çalışma klasörünün dışına çıkıyor',symlink:'sembolik bağlantı kullanılamaz',not_regular_file:'hedef normal bir dosya değil',
-  import_not_found:'import edilen dosya bulunamadı',unreadable:'dosya güvenle okunamadı',not_utf8:'dosya UTF-8 değil',depth_exceeded:'import derinliği 5 sınırını aşıyor',
-  import_cycle:'import döngüsü bulundu',too_large:'proje talimatı 16 KiB sınırını aşıyor'}
+const retryRefusals:Record<string,string> = {session_not_retryable:t('session.retryRefusal.notRetryable'),
+  workspace_busy:t('session.retryRefusal.workspaceBusy'),
+  recovery_required:t('session.retryRefusal.recoveryRequired'),no_failed_step:t('session.retryRefusal.noFailedStep'),
+  context_budget_exhausted:t('session.retryRefusal.contextBudgetExhausted')}
+const instructionReasons:Record<string,string> = {import_invalid_path:t('session.instructionReason.invalidPath'),import_absolute:t('session.instructionReason.absolute'),import_home:t('session.instructionReason.home'),
+  import_outside_workspace:t('session.instructionReason.outsideWorkspace'),symlink:t('session.instructionReason.symlink'),not_regular_file:t('session.instructionReason.notRegularFile'),
+  import_not_found:t('session.instructionReason.notFound'),unreadable:t('session.instructionReason.unreadable'),not_utf8:t('session.instructionReason.notUtf8'),depth_exceeded:t('session.instructionReason.depthExceeded'),
+  import_cycle:t('session.instructionReason.cycle'),too_large:t('session.instructionReason.tooLarge')}
 
 /** One execution (session) from real backend data: steps, attempts, handoffs, continuations, live feed, recovery.
  *  `embedded` renders it under a work message (no page title); controls and rules are the same as standalone. */
@@ -110,81 +111,81 @@ export function SessionView({sessionId,embedded=false,onChange,status:hint}:{ses
   }catch(e){setError(e instanceof ApiError&&e.code&&retryRefusals[e.code]?retryRefusals[e.code]:String(e))}finally{setBusy(false)}}
   async function cancelWait(){setBusy(true);setError('');try{
     await api(`/api/sessions/${sessionId}/wait`,{method:'DELETE'});setDetail(await api<Detail>(`/api/sessions/${sessionId}`));onChange?.()
-  }catch(e){setError(e instanceof ApiError&&e.code==='wait_already_fired'?'Otomatik deneme az önce başladı; iptal için yürütmeyi durdurun.':String(e))}finally{setBusy(false)}}
-  if(!detail)return error?<div className="error-banner" role="alert">{error}</div>:<p className="loading">Yürütme yükleniyor…</p>
+  }catch(e){setError(e instanceof ApiError&&e.code==='wait_already_fired'?t('session.wait.alreadyFired'):String(e))}finally{setBusy(false)}}
+  if(!detail)return error?<div className="error-banner" role="alert">{error}</div>:<p className="loading">{t('session.loading')}</p>
   const status=detail.session.status, plan=detail.wait_plan
   const badInstructions=[detail.project_instructions,detail.agents_instructions].find(i=>i?.status==='rejected')
   const turnOf=(id:string)=>detail.turns?.find(t=>t.author_step_id===id||t.reviewer_step_id===id)?.turn_no
-  const stepTitle=(s:Step)=>{const role=s.role==='author'?'Yazar':s.role==='reviewer'?'İnceleyici':s.agent_name,turn=turnOf(s.id)
-    return turn?`Tur ${turn} · ${role}`:`${s.step_index+1}. ${role}`}
+  const stepTitle=(s:Step)=>{const role=s.role==='author'?t('session.role.author'):s.role==='reviewer'?t('session.role.reviewer'):s.agent_name,turn=turnOf(s.id)
+    return turn?t('session.step.turnTitle',{turn,role}):t('session.step.indexTitle',{index:s.step_index+1,role})}
   return <div className={embedded?'run-view embedded':'run-view'}>
     {error&&<div className="error-banner" role="alert">{error}</div>}
     <div className="run-head">
-      <div>{!embedded&&<h1>{detail.session.workspace_path.split('/').pop()||'Çalışma'}</h1>}
-        <div className="sub"><Pill status={status} recovered={detail.steps.some(s=>s.terminal_reason===RECOVERED)}/>{connected&&<span className="live" role="status"><span className="dot"/>Canlı</span>}{embedded&&<span className="muted mono small">{detail.session.id}</span>}</div>
+      <div>{!embedded&&<h1>{detail.session.workspace_path.split('/').pop()||t('session.defaultTitle')}</h1>}
+        <div className="sub"><Pill status={status} recovered={detail.steps.some(s=>s.terminal_reason===RECOVERED)}/>{connected&&<span className="live" role="status"><span className="dot"/>{t('session.live')}</span>}{embedded&&<span className="muted mono small">{detail.session.id}</span>}</div>
         {!embedded&&<p className="path">{detail.session.workspace_path}</p>}</div><span className="spacer"/>
-      {canInterrupt()&&active(status)&&<button className="btn danger" disabled={busy||stopping} onClick={()=>void cancel()}>{stopping?'Durduruluyor…':'Durdur'}</button>}
+      {canInterrupt()&&active(status)&&<button className="btn danger" disabled={busy||stopping} onClick={()=>void cancel()}>{stopping?t('session.stopping'):t('session.stop')}</button>}
     </div>
     {resume&&<p className={'resume-note '+(resume.decision==='RESUME'?'resume':'fresh')} role="status">{resume.decision==='RESUME'
-      ?'Yazar, önceki başarılı yürütmenin Codex konuşmasına devam isteğiyle başlatıldı.'
-      :`Yazar taze istemle başlatıldı — ${resumeReasons[resume.reason]||resume.reason}.`}</p>}
+      ?t('session.resume.continued')
+      :t('session.resume.fresh',{reason:resumeReasons[resume.reason]||resume.reason})}</p>}
     {detail.loop&&<LoopView sessionId={sessionId} status={status} loop={detail.loop} turns={detail.turns||[]}
       onChanged={()=>{void api<Detail>(`/api/sessions/${sessionId}`).then(setDetail).catch(e=>setError(String(e)));onChange?.()}}
       onResumed={()=>{setNonce(n=>n+1);onChange?.()}}/>}
-    {rejected&&<p className="notice" role="alert"><strong>İstem çok büyük — model çağrılmadı.</strong> {promptRejections[rejected.reason||'']||rejected.reason}{rejected.bytes&&rejected.limit?` (${rejected.bytes} / ${rejected.limit} bayt)`:''}</p>}
-    {badInstructions&&<p className="notice" role="alert"><strong>Proje talimatı reddedildi — model çağrılmadı.</strong>{' '}
+    {rejected&&<p className="notice" role="alert"><strong>{t('session.rejected.title')}</strong> {promptRejections[rejected.reason||'']||rejected.reason}{rejected.bytes&&rejected.limit?t('session.rejected.bytes',{bytes:rejected.bytes,limit:rejected.limit}):''}</p>}
+    {badInstructions&&<p className="notice" role="alert"><strong>{t('session.badInstructions.title')}</strong>{' '}
       {instructionReasons[badInstructions.reason||'']||badInstructions.reason}
       {badInstructions.path?` · ${badInstructions.path}`:''}
-      {badInstructions.source_path?` (${badInstructions.source_path}${badInstructions.line?`:${badInstructions.line}`:''} kaynağından)`:''}.
-      {' '}{badInstructions===detail.agents_instructions?'AGENTS.md':'CLAUDE.md'} dosyasını düzeltin, yeni bir mesaj gönderin ve bu başarısız yürütmeyi inceledikten sonra sırayı devam ettirin.</p>}
-    {status==='RECOVERY_REQUIRED'&&<section className="card"><div className="card-h"><h2>Kurtarma gerekiyor</h2><span className="spacer"/>{recovery?.lock_retained&&<span className="pill warn">Kilit tutuluyor</span>}</div><div className="card-b">
-      <p className="notice" role="status">İşlem otomatik yeniden çalıştırılmadı. Kurtarma, sahipli süreç grubunu sonlandırıp ölümü doğruladıktan sonra klasör kilidini bırakır.</p>
-      {recovery?.owners.map(o=><div key={o.attempt_id} className="attempt"><span className="no mono">PID {o.pid}</span><span className="muted mono">PGID {o.pgid}</span><span className="spacer"/><span className={'pill '+(o.group_alive?'warn':'ok')}>{o.group_alive?'Süreç yaşıyor':'Süreç yok'}</span></div>)}
-      {recovery&&!recovery.owners.length&&<p className="chain-note">Kayıtlı canlı süreç yok; kurtarma yalnız kilidi bırakır.</p>}
-      {!!recoverResult?.blocking?.length&&<p className="notice" role="alert">Şu süreçler otomatik doğrulanamadı: {recoverResult.blocking.join(', ')}. Kilit korundu; OS düzeyinde manuel inceleme/temizleme gerekebilir.</p>}
-      {!mobile.active&&<button className="btn danger" disabled={busy} onClick={()=>setConfirmRecover(true)}>Kurtar</button>}
+      {badInstructions.source_path?t('session.badInstructions.fromSource',{source:`${badInstructions.source_path}${badInstructions.line?`:${badInstructions.line}`:''}`}):''}.
+      {' '}{t('session.badInstructions.fixHint',{file:badInstructions===detail.agents_instructions?'AGENTS.md':'CLAUDE.md'})}</p>}
+    {status==='RECOVERY_REQUIRED'&&<section className="card"><div className="card-h"><h2>{t('session.recovery.title')}</h2><span className="spacer"/>{recovery?.lock_retained&&<span className="pill warn">{t('session.recovery.lockRetained')}</span>}</div><div className="card-b">
+      <p className="notice" role="status">{t('session.recovery.notice')}</p>
+      {recovery?.owners.map(o=><div key={o.attempt_id} className="attempt"><span className="no mono">PID {o.pid}</span><span className="muted mono">PGID {o.pgid}</span><span className="spacer"/><span className={'pill '+(o.group_alive?'warn':'ok')}>{o.group_alive?t('session.recovery.processAlive'):t('session.recovery.processGone')}</span></div>)}
+      {recovery&&!recovery.owners.length&&<p className="chain-note">{t('session.recovery.noOwners')}</p>}
+      {!!recoverResult?.blocking?.length&&<p className="notice" role="alert">{t('session.recovery.blocking',{pids:recoverResult.blocking.join(', ')})}</p>}
+      {!mobile.active&&<button className="btn danger" disabled={busy} onClick={()=>setConfirmRecover(true)}>{t('session.recovery.action')}</button>}
     </div></section>}
-    {confirmRecover&&<Modal label="Kurtarmayı onayla" busy={busy} onClose={()=>setConfirmRecover(false)}>
-      <h3>Kurtarmayı onayla</h3>
-      <p><strong>Bu çalışma klasöründeki tüm sahipli süreçler sonlandırılacak.</strong> Süreç grubu ölümü doğrulandıktan sonra klasör kilidi bırakılır ve çalışma başarısız olarak kapanır.</p>
-      {!!recovery?.owners.length&&<p className="chain-note mono">Etkilenecek PID: {recovery.owners.map(o=>o.pid).join(', ')}</p>}
-      <div className="modal-actions"><button className="btn" disabled={busy} onClick={()=>setConfirmRecover(false)}>Vazgeç</button><button className="btn danger" disabled={busy} onClick={()=>void recover()}>{busy?'Kurtarılıyor…':'Süreçleri sonlandır ve kurtar'}</button></div>
+    {confirmRecover&&<Modal label={t('session.recovery.confirmTitle')} busy={busy} onClose={()=>setConfirmRecover(false)}>
+      <h3>{t('session.recovery.confirmTitle')}</h3>
+      <p><strong>{t('session.recovery.confirmLead')}</strong> {t('session.recovery.confirmBody')}</p>
+      {!!recovery?.owners.length&&<p className="chain-note mono">{t('session.recovery.affectedPids',{pids:recovery.owners.map(o=>o.pid).join(', ')})}</p>}
+      <div className="modal-actions"><button className="btn" disabled={busy} onClick={()=>setConfirmRecover(false)}>{t('session.recovery.cancel')}</button><button className="btn danger" disabled={busy} onClick={()=>void recover()}>{busy?t('session.recovery.recovering'):t('session.recovery.confirmAction')}</button></div>
     </Modal>}
-    {status==='WAITING_CONTEXT'&&<div className="notice" role="status">Otomatik devam durdu; inceleme gerekli. {detail.steps.map(s=>contextLabels[s.terminal_reason||'']).filter(Boolean).join(' ')} {!mobile.active&&<button className="btn" disabled={busy} aria-busy={busy} onClick={()=>void retry()}>{busy?'…':'Yeniden dene'}</button>} {canInterrupt()&&<button className="btn danger" disabled={busy} onClick={()=>void cancel()}>Durdur</button>}</div>}
-    {status==='WAITING_CAPACITY'&&plan?.status==='PENDING'?<div className="notice" role="status"><strong>Kota bekleniyor — otomatik yeniden deneme planlı.</strong>{' '}
-      Deneme {plan.attempts_so_far} / {plan.max_attempts} · sonraki deneme {when(plan.next_retry_at)} · son süre {when(plan.deadline)}.{' '}
-      {!mobile.active&&<button className="btn" disabled={busy} aria-busy={busy} onClick={()=>void retry()}>{busy?'…':'Şimdi dene'}</button>}{' '}
-      {canInterrupt()&&<button className="btn danger" disabled={busy} onClick={()=>void cancelWait()}>Beklemeyi iptal et</button>}</div>
-    :['WAITING_CAPACITY','WAITING_AUTH'].includes(status)&&<div className="notice" role="status">{labels[status]}. Otomatik devam yok; yeniden denemeyi siz başlatırsınız.{plan&&plan.closed_reason&&status==='WAITING_CAPACITY'?` Otomatik bekleme bitti: ${waitEnds[plan.closed_reason]||plan.closed_reason}.`:''} {!mobile.active&&<button className="btn" disabled={busy} aria-busy={busy} onClick={()=>void retry()}>{busy?'…':'Yeniden dene'}</button>} {canInterrupt()&&<button className="btn danger" disabled={busy} onClick={()=>void cancel()}>Durdur</button>}</div>}
-    {status==='WAITING_HUMAN'&&<div className="notice" role="alert"><strong>Klasör kota beklenirken değişti — otomatik devam durdu.</strong>{' '}
-      {changedPaths.length?`Değişen: ${changedPaths.slice(0,5).join(', ')}${changedPaths.length>5?` ve ${changedPaths.length-5} dosya daha`:''}. `:''}Değişiklikleri inceleyin; devam etmek için yeniden deneyin ya da yürütmeyi durdurun.{' '}
-      {!mobile.active&&<button className="btn" disabled={busy} aria-busy={busy} onClick={()=>void retry()}>{busy?'…':'Yeniden dene'}</button>}{' '}
-      {canInterrupt()&&<button className="btn danger" disabled={busy} onClick={()=>void cancel()}>Durdur</button>}</div>}
-    {status==='FAILED'&&plan?.status==='EXPIRED'&&<p className="notice" role="status">Otomatik bekleme bitti: {waitEnds[plan.closed_reason||'']||plan.closed_reason} ({plan.attempts_so_far} / {plan.max_attempts} deneme).</p>}
-    {status==='WAITING_APPROVAL'&&<div className="notice" role="status">{labels.WAITING_APPROVAL}. Sağlayıcı bir aracı reddetti; bu yürütme kendiliğinden devam etmez. Durdurup yeni mesajla yeniden başlatın. {canInterrupt()&&<button className="btn danger" disabled={busy} onClick={()=>void cancel()}>Durdur</button>}</div>}
-    {!embedded&&detail.policy&&<section className="card"><div className="card-h"><h2>Sağlayıcı zinciri</h2><span className="spacer"/><span className="accepted">Bu çalışma için donduruldu</span></div><div className="card-b"><Chains policy={detail.policy}/></div></section>}
-    <section className="card"><div className="card-h"><h2>Çalışma akışı</h2><span className="spacer"/><span className="chain-note" role="status">{detail.steps.filter(s=>s.status==='COMPLETED').length} / {detail.steps.length} adım tamamlandı</span></div>
-    <div className="card-b timeline">{!detail.steps.length&&<p className="muted">Adımlar başlatılmadı.</p>}{detail.steps.map(s=><section className={`step ${s.status==='COMPLETED'?'done':s.status==='RUNNING'?'active':''}`} key={s.id}>
+    {status==='WAITING_CONTEXT'&&<div className="notice" role="status">{t('session.waitingContext.notice')} {detail.steps.map(s=>contextLabels[s.terminal_reason||'']).filter(Boolean).join(' ')} {!mobile.active&&<button className="btn" disabled={busy} aria-busy={busy} onClick={()=>void retry()}>{busy?'…':t('session.retry')}</button>} {canInterrupt()&&<button className="btn danger" disabled={busy} onClick={()=>void cancel()}>{t('session.stop')}</button>}</div>}
+    {status==='WAITING_CAPACITY'&&plan?.status==='PENDING'?<div className="notice" role="status"><strong>{t('session.wait.plannedTitle')}</strong>{' '}
+      {t('session.wait.plannedDetail',{used:plan.attempts_so_far,max:plan.max_attempts,next:when(plan.next_retry_at),deadline:when(plan.deadline)})}{' '}
+      {!mobile.active&&<button className="btn" disabled={busy} aria-busy={busy} onClick={()=>void retry()}>{busy?'…':t('session.wait.tryNow')}</button>}{' '}
+      {canInterrupt()&&<button className="btn danger" disabled={busy} onClick={()=>void cancelWait()}>{t('session.wait.cancel')}</button>}</div>
+    :['WAITING_CAPACITY','WAITING_AUTH'].includes(status)&&<div className="notice" role="status">{labels[status]}. {t('session.wait.manualNotice')}{plan&&plan.closed_reason&&status==='WAITING_CAPACITY'?t('session.wait.endedInline',{reason:waitEnds[plan.closed_reason]||plan.closed_reason}):''} {!mobile.active&&<button className="btn" disabled={busy} aria-busy={busy} onClick={()=>void retry()}>{busy?'…':t('session.retry')}</button>} {canInterrupt()&&<button className="btn danger" disabled={busy} onClick={()=>void cancel()}>{t('session.stop')}</button>}</div>}
+    {status==='WAITING_HUMAN'&&<div className="notice" role="alert"><strong>{t('session.waitingHuman.title')}</strong>{' '}
+      {changedPaths.length?t('session.waitingHuman.changed',{paths:changedPaths.slice(0,5).join(', '),more:changedPaths.length>5?t('session.waitingHuman.moreFiles',{count:changedPaths.length-5}):''}):''}{t('session.waitingHuman.body')}{' '}
+      {!mobile.active&&<button className="btn" disabled={busy} aria-busy={busy} onClick={()=>void retry()}>{busy?'…':t('session.retry')}</button>}{' '}
+      {canInterrupt()&&<button className="btn danger" disabled={busy} onClick={()=>void cancel()}>{t('session.stop')}</button>}</div>}
+    {status==='FAILED'&&plan?.status==='EXPIRED'&&<p className="notice" role="status">{t('session.wait.expiredNotice',{reason:waitEnds[plan.closed_reason||'']||plan.closed_reason||'',used:plan.attempts_so_far,max:plan.max_attempts})}</p>}
+    {status==='WAITING_APPROVAL'&&<div className="notice" role="status">{labels.WAITING_APPROVAL}. {t('session.waitingApproval.notice')} {canInterrupt()&&<button className="btn danger" disabled={busy} onClick={()=>void cancel()}>{t('session.stop')}</button>}</div>}
+    {!embedded&&detail.policy&&<section className="card"><div className="card-h"><h2>{t('session.policy.title')}</h2><span className="spacer"/><span className="accepted">{t('session.policy.frozen')}</span></div><div className="card-b"><Chains policy={detail.policy}/></div></section>}
+    <section className="card"><div className="card-h"><h2>{t('session.workflow.title')}</h2><span className="spacer"/><span className="chain-note" role="status">{t('session.workflow.progress',{done:detail.steps.filter(s=>s.status==='COMPLETED').length,total:detail.steps.length})}</span></div>
+    <div className="card-b timeline">{!detail.steps.length&&<p className="muted">{t('session.workflow.empty')}</p>}{detail.steps.map(s=><section className={`step ${s.status==='COMPLETED'?'done':s.status==='RUNNING'?'active':''}`} key={s.id}>
       <span className="node" aria-hidden="true">{s.status==='COMPLETED'?'✓':s.step_index+1}</span>
-      <div className="step-head"><h3 className="t">{stepTitle(s)}</h3>{s.role&&<span className={'chip '+s.role}>{s.role==='author'?'Yazma':'Salt okunur'}</span>}<span className="spacer"/><Pill status={s.status} recovered={s.terminal_reason===RECOVERED}/></div>
-      <div className="attempts">{detail.attempts.filter(a=>a.step_id===s.id).map(a=>{const meta=promptMeta[a.id];return <div className="attempt" key={a.id}><span className="no">Deneme {a.attempt_no}</span><Provider name={a.provider}/><span className="muted">{a.profile==='WRITE'?'Yazma':'Salt okunur'}</span>
-        {meta?.format&&<span className="muted">· {promptFormats[meta.format]||meta.format}{meta.history?.truncated?' · geçmiş kısaltıldı':''}</span>}
+      <div className="step-head"><h3 className="t">{stepTitle(s)}</h3>{s.role&&<span className={'chip '+s.role}>{s.role==='author'?t('session.profile.write'):t('session.profile.readOnly')}</span>}<span className="spacer"/><Pill status={s.status} recovered={s.terminal_reason===RECOVERED}/></div>
+      <div className="attempts">{detail.attempts.filter(a=>a.step_id===s.id).map(a=>{const meta=promptMeta[a.id];return <div className="attempt" key={a.id}><span className="no">{t('session.attempt.no',{no:a.attempt_no})}</span><Provider name={a.provider}/><span className="muted">{a.profile==='WRITE'?t('session.profile.write'):t('session.profile.readOnly')}</span>
+        {meta?.format&&<span className="muted">· {promptFormats[meta.format]||meta.format}{meta.history?.truncated?t('session.attempt.historyTruncated'):''}</span>}
         <span className="spacer"/><Pill status={a.status} recovered={a.terminal_reason===RECOVERED}/>{a.error_code&&<code className="attempt-code">{a.error_code}</code>}</div>})}</div>
-      {noChanges.has(s.id)&&<div className="handover"><strong>Değişiklik yok</strong><span>Yerel model bu adımda klasörde hiçbir dosyayı değiştirmedi; çıktıyı kontrol edin.</span></div>}
-      {handoffs.filter(h=>h.step_id===s.id).map(h=><div key={h.id} className="handover"><strong>Devir</strong><span>{h.from} → {h.to}</span><span>· {h.reason==='QUOTA_EXCEEDED'?'Doğrulanmış kota sınırı':h.reason}</span></div>)}
-      <p className="chain-note">Bağlam devamı: {detail.attempts.filter(a=>a.step_id===s.id&&a.continuation_no>0&&a.handover_reason!=='command_denied_followup').length} / {detail.policy?.max_context_continuations??0} · adım toplamı</p>
-      {continuations.filter(c=>c.step_id===s.id).map(c=><div key={c.id} className="handover"><strong>{startedAttempts.has(c.to_attempt_id)?'Yeni oturumda devam':'Bağlam devamı hazırlandı'}</strong><span>{c.provider} · {c.step_continuations_used}/{c.max_context_continuations}</span></div>)}
-      {s.result_text&&<details className="step-out" open={s.status==='FAILED'}><summary>Adım sonucu</summary><pre>{s.result_text}</pre></details>}
+      {noChanges.has(s.id)&&<div className="handover"><strong>{t('session.noChanges.title')}</strong><span>{t('session.noChanges.body')}</span></div>}
+      {handoffs.filter(h=>h.step_id===s.id).map(h=><div key={h.id} className="handover"><strong>{t('session.handoff.title')}</strong><span>{h.from} → {h.to}</span><span>· {h.reason==='QUOTA_EXCEEDED'?t('session.handoff.quotaExceeded'):h.reason}</span></div>)}
+      <p className="chain-note">{t('session.continuation.summary',{used:detail.attempts.filter(a=>a.step_id===s.id&&a.continuation_no>0&&a.handover_reason!=='command_denied_followup').length,max:detail.policy?.max_context_continuations??0})}</p>
+      {continuations.filter(c=>c.step_id===s.id).map(c=><div key={c.id} className="handover"><strong>{startedAttempts.has(c.to_attempt_id)?t('session.continuation.started'):t('session.continuation.prepared')}</strong><span>{c.provider} · {c.step_continuations_used}/{c.max_context_continuations}</span></div>)}
+      {s.result_text&&<details className="step-out" open={s.status==='FAILED'}><summary>{t('session.step.result')}</summary><pre>{s.result_text}</pre></details>}
       {s.terminal_reason&&!['completed','cancelled_by_user'].includes(s.terminal_reason)&&<p className="step-out" role="status">{reasonLabels[s.terminal_reason]||s.terminal_reason}</p>}
     </section>)}</div></section>
-    <section className="card"><div className="card-h"><h2>Olay akışı</h2><span className="spacer"/><span className="chain-note">{connected?'Canlı güncelleniyor':'Kaydedilen olaylar'}</span></div>
-    <div className="feed">{!feed.length&&<p className="card-b muted">Henüz çıktı veya komut olayı yok.</p>}{feed.map(e=>{
+    <section className="card"><div className="card-h"><h2>{t('session.feed.title')}</h2><span className="spacer"/><span className="chain-note">{connected?t('session.feed.live'):t('session.feed.recorded')}</span></div>
+    <div className="feed" role="log" aria-live="polite">{!feed.length&&<p className="card-b muted">{t('session.feed.empty')}</p>}{feed.map(e=>{
       const provider=detail.attempts.find(a=>a.id===e.attempt_id)?.provider
       return <article className={'evt '+(e.kind==='handoff'?'feed-handover':'')} key={e.id}>
         <span className={'av '+(e.kind==='handoff'?'sys':provider||'sys')} aria-hidden="true">{e.kind==='handoff'?'↗':provider?.slice(0,1).toUpperCase()||'·'}</span>
-        <div className="event-body"><div className="who">{e.kind==='handoff'?'Sağlayıcı devri':provider||'Sağlayıcı'}<span>{e.kind==='command_result'?'Komut sonucu':e.kind==='output_delta'?'Çıktı':''}</span></div>
-        {e.kind==='command_result'?<><pre className="tool">{e.text}</pre><span className="chain-note">Çıkış kodu: {e.exitCode??'Bilinmiyor'}</span>{e.output&&<details><summary>Komut çıktısı</summary><pre className="tool">{e.output}</pre></details>}</>:<p className="msg">{e.text}</p>}</div>
+        <div className="event-body"><div className="who">{e.kind==='handoff'?t('session.feed.handoff'):provider||t('session.feed.provider')}<span>{e.kind==='command_result'?t('session.feed.commandResult'):e.kind==='output_delta'?t('session.feed.output'):''}</span></div>
+        {e.kind==='command_result'?<><pre className="tool" tabIndex={0}>{e.text}</pre><span className="chain-note">{t('session.feed.exitCode',{code:e.exitCode??t('session.feed.unknownExit')})}</span>{e.output&&<details><summary>{t('session.feed.commandOutput')}</summary><pre className="tool" tabIndex={0}>{e.output}</pre></details>}</>:<p className="msg">{e.text}</p>}</div>
       </article>
-    })}</div><p className="feed-note">Son 200 çıktı/komut bloğu gösterilir. Komutlar yalnız sağlayıcının kaydettiği olaylarda görünür.</p></section>
+    })}</div><p className="feed-note">{t('session.feed.note')}</p></section>
   </div>
 }

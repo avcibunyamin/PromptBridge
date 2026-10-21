@@ -1,4 +1,5 @@
-import { mobile, unauthorized, withAuth } from './mobile'
+import { mobile, unauthorized, withAuth } from './mobile.ts'
+import { t } from './i18n/index.ts'   // used only when a request fails, so the i18n ↔ api import cycle is harmless
 import type { AccountItem, AddAccountInput } from './accountRules'
 import type { GhRepo, GhState, GhStatus, PrView, PushView } from './githubRules'
 // API base — empty string so Vite proxy and prod static both work
@@ -60,13 +61,12 @@ export class ApiError extends Error {
   }
 }
 
-export const OFFLINE = "Mac'e ulaşılamıyor. Telefonda Tailscale açık mı, Mac uyanık mı?"
 
 export async function checkedFetch(path: string, opts?: RequestInit) {
   const r = await fetch(BASE + path, withAuth(opts)).catch(e => {
     // on the phone a network failure almost always means Tailscale is off or the Mac is asleep;
     // empty name so the String(e) banners show the sentence alone, cause keeps the browser's error
-    throw mobile.active && e?.name !== 'AbortError' ? Object.assign(new Error(OFFLINE), { name: '', cause: e }) : e
+    throw mobile.active && e?.name !== 'AbortError' ? Object.assign(new Error(t('shell.offline')), { name: '', cause: e }) : e
   })   // TB-12: device token on the mobile gateway
   if (r.status === 401 && mobile.active) unauthorized()   // revoked on the Mac: back to the pairing screen
   if (!r.ok) {

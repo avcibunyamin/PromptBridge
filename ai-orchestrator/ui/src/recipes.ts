@@ -1,3 +1,5 @@
+import { t } from './i18n/index.ts'
+
 export type Recipe = {
   id: string
   title: string
@@ -7,22 +9,22 @@ export type Recipe = {
 export const RECIPES: Recipe[] = [
   {
     id: 'guvenlik',
-    title: 'Güvenlik odaklı',
-    hint: 'Girdi doğrulama, yetki sınırları, sır sızıntısı, kabuk/yol enjeksiyonu',
+    title: t('work.recipe.guvenlik.title'),
+    hint: t('work.recipe.guvenlik.hint'),
   },
   {
     id: 'hata',
-    title: 'Hata ayıklama + regresyon testi',
-    hint: 'Önce yeniden üret, kök neden, düzeltmeyi kanıtlayan test',
+    title: t('work.recipe.hata.title'),
+    hint: t('work.recipe.hata.hint'),
   },
   {
     id: 'mimari',
-    title: 'Mimari uyum',
-    hint: 'Mevcut kalıplar, gereksiz soyutlama yok, karar kaydı gerekiyor mu',
+    title: t('work.recipe.mimari.title'),
+    hint: t('work.recipe.mimari.hint'),
   },
   {
     id: 'arayuz',
-    title: 'Arayüz uyumu',
-    hint: 'Mac ve telefon, erişilebilirlik, React hook kuralı, metinler Türkçe',
+    title: t('work.recipe.arayuz.title'),
+    hint: t('work.recipe.arayuz.hint'),
   },
 ]

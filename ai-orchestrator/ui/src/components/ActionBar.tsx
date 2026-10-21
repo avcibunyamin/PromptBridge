@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { t } from '../i18n'
 
 interface Props {
   onApprove: (actor: string) => Promise<void>
@@ -21,7 +22,7 @@ export function ActionBar({ onApprove, onReject, error }: Props) {
     <div className="action-bar">
       <div className="actor-row">
         <label className="actor-label">
-          Aktör:
+          {t('bridge.action.actor')}
           <input
             className="actor-input"
             value={actor}
@@ -39,17 +40,17 @@ export function ActionBar({ onApprove, onReject, error }: Props) {
           disabled={busy || !actor}
           onClick={() => run(() => onApprove(actor))}
         >
-          {busy ? '…' : '✓ Onayla ve İlet'}
+          {busy ? '…' : t('bridge.action.approveDeliver')}
         </button>
 
         {!showReject
           ? <button className="btn-reject-ghost" onClick={() => setShowReject(true)}>
-              ✕ Reddet
+              {t('bridge.action.rejectGhost')}
             </button>
           : <div className="reject-form">
               <textarea
                 className="reject-reason"
-                placeholder="Red sebebi (opsiyonel)…"
+                placeholder={t('bridge.action.rejectReasonPlaceholder')}
                 value={reason}
                 onChange={e => setReason(e.target.value)}
                 rows={2}
@@ -61,10 +62,10 @@ export function ActionBar({ onApprove, onReject, error }: Props) {
                   disabled={busy || !actor}
                   onClick={() => run(() => onReject(actor, reason))}
                 >
-                  Reddet
+                  {t('bridge.action.reject')}
                 </button>
                 <button className="btn-ghost" onClick={() => setShowReject(false)}>
-                  İptal
+                  {t('bridge.action.cancel')}
                 </button>
               </div>
             </div>}

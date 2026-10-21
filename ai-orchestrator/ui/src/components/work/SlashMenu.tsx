@@ -1,5 +1,6 @@
 import { useState, type KeyboardEvent } from 'react'
 import { matchSlash, slashQuery, type Slash } from './slash'
+import { t } from '../../i18n'
 
 export type SlashCommand = Slash & { run: () => void }
 
@@ -29,7 +30,7 @@ export function useSlash(text: string, setText: (t: string) => void, commands: S
     if (e.key === 'Escape') { e.preventDefault(); setClosedFor(text); return true }
     return false
   }
-  const menu = list.length ? <ul className="slash-menu" role="listbox" aria-label="Kısayollar">
+  const menu = list.length ? <ul className="slash-menu" role="listbox" aria-label={t('work.slash.label')}>
     {list.map((c, i) => <li key={c.name} role="option" aria-selected={i === at}>
       <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => run(c)} onMouseEnter={() => setIndex(i)}>
         <span className="mono">/{c.name}</span><span className="muted small">{c.hint}</span></button></li>)}

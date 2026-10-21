@@ -1,4 +1,5 @@
 import type { Envelope } from '../api'
+import { t } from '../i18n'
 import { StatusBadge } from './StatusBadge'
 
 interface Props {
@@ -9,7 +10,7 @@ interface Props {
 
 export function EnvelopeList({ envelopes, selectedId, onSelect }: Props) {
   if (envelopes.length === 0) {
-    return <p className="empty-list">Zarf yok.</p>
+    return <p className="empty-list">{t('bridge.list.empty')}</p>
   }
   return (
     <ul className="envelope-list">
@@ -25,7 +26,7 @@ export function EnvelopeList({ envelopes, selectedId, onSelect }: Props) {
             <StatusBadge state={env.state} />
             <span className="card-date">{env.created_at.slice(0, 16).replace('T', ' ')}</span>
           </div>
-          <div className="card-title">{env.title ?? '(başlıksız)'}</div>
+          <div className="card-title">{env.title ?? t('bridge.untitled')}</div>
           <div className="card-meta">{env.source_agent} → {env.target_agent}</div>
           </button>
         </li>

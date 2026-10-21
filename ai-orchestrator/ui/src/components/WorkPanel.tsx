@@ -92,6 +92,8 @@ export function WorkPanel({head,foot,top,override,onOpen}:{head?:ReactNode;foot?
         const trigger=menuRef.current?.parentElement?.querySelector<HTMLButtonElement>('.session-more')
         setMenuId(null)
         trigger?.focus()
+      }else if(e.key==='Tab'){
+        setMenuId(null)
       }
     }
     document.addEventListener('mousedown',onMouseDown)
@@ -282,7 +284,7 @@ export function WorkPanel({head,foot,top,override,onOpen}:{head?:ReactNode;foot?
               {statusBadge}
               {timeLine}
             </button>}
-          {actions.length>0&&<button type="button" className="session-more" aria-label="Çalışma menüsü" aria-haspopup="menu"
+          {actions.length>0&&<button type="button" className="session-more" aria-label={`${w.title} — çalışma menüsü`} aria-haspopup="menu"
             aria-expanded={menuId===w.id} onClick={e=>{e.stopPropagation();setMenuId(cur=>cur===w.id?null:w.id)}}>⋯</button>}
           {actions.length>0&&menuId===w.id&&<div ref={menuRef} role="menu" aria-label="Çalışma menüsü" className="work-menu" onKeyDown={onMenuKeyDown}>
             {actions.map(act=><button key={act} type="button" role="menuitem" className={act==='delete'?'danger':undefined}

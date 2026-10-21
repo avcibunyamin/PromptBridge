@@ -174,7 +174,7 @@ dialog.modal:has(.gh-steps){max-width:640px}
 /* K-039: Claude-like composer — one rounded box, borderless text, a bar with tools left and model · effort · ring · send right */
 .composer{border-radius:20px;padding:12px 12px 10px;gap:8px;border-color:var(--border-strong);box-shadow:0 1px 2px rgba(23,62,24,.04),0 6px 20px -12px rgba(23,62,24,.18)}
 .composer textarea,.composer.new-composer>textarea{border:0;background:transparent;padding:6px 6px 2px;min-height:52px;resize:none;font-size:15px;line-height:1.55;box-shadow:none}
-.composer textarea:focus{outline:none}.composer:focus-within{border-color:color-mix(in srgb,var(--accent) 45%,var(--border-strong))}
+.composer textarea:focus{outline:none}.composer:focus-within{border-color:color-mix(in srgb,var(--accent) 45%,var(--border-strong));outline:2px solid var(--accent);outline-offset:2px}
 .composer-input{gap:8px}
 .composer-model{flex-wrap:nowrap;gap:6px;min-width:0}
 .composer-tools{width:32px;height:32px;border-radius:999px;flex:none}.composer-tools svg{width:16px;height:16px}
@@ -289,7 +289,7 @@ dialog.modal:has(.gh-steps){max-width:640px}
 .session-more:hover,.session-more[aria-expanded=true]{background:var(--surface-2);color:var(--ink)}
 .work-menu{position:absolute;top:32px;right:6px;z-index:35;min-width:176px;padding:5px;background:var(--surface);border:1px solid var(--border-strong);border-radius:10px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:2px}
 .work-menu button{display:flex;align-items:center;gap:8px;width:100%;border:0;background:transparent;color:var(--ink);font:inherit;font-size:13px;font-weight:500;text-align:left;padding:7px 10px;border-radius:7px;cursor:pointer}
-.work-menu button:hover,.work-menu button:focus-visible{background:var(--inset);outline:none}
+.work-menu button:hover,.work-menu button:focus-visible{background:var(--inset)}.work-menu button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 .work-menu button.danger{color:var(--bad)}
 .work-menu button.danger:hover,.work-menu button.danger:focus-visible{background:var(--bad-soft);color:var(--bad)}
 .session-rename{width:100%;padding:4px 8px;border:1px solid var(--border-strong);border-radius:6px;background:var(--surface);color:var(--ink);font:inherit;font-size:13px;font-weight:600}

@@ -121,7 +121,7 @@ export function SessionView({sessionId,embedded=false,onChange,status:hint}:{ses
     {error&&<div className="error-banner" role="alert">{error}</div>}
     <div className="run-head">
       <div>{!embedded&&<h1>{detail.session.workspace_path.split('/').pop()||'Çalışma'}</h1>}
-        <div className="sub"><Pill status={status} recovered={detail.steps.some(s=>s.terminal_reason===RECOVERED)}/>{connected&&<span className="live"><span className="dot"/>Canlı</span>}{embedded&&<span className="muted mono small">{detail.session.id}</span>}</div>
+        <div className="sub"><Pill status={status} recovered={detail.steps.some(s=>s.terminal_reason===RECOVERED)}/>{connected&&<span className="live" role="status"><span className="dot"/>Canlı</span>}{embedded&&<span className="muted mono small">{detail.session.id}</span>}</div>
         {!embedded&&<p className="path">{detail.session.workspace_path}</p>}</div><span className="spacer"/>
       {canInterrupt()&&active(status)&&<button className="btn danger" disabled={busy||stopping} onClick={()=>void cancel()}>{stopping?'Durduruluyor…':'Durdur'}</button>}
     </div>
@@ -146,24 +146,24 @@ export function SessionView({sessionId,embedded=false,onChange,status:hint}:{ses
     </div></section>}
     {confirmRecover&&<Modal label="Kurtarmayı onayla" busy={busy} onClose={()=>setConfirmRecover(false)}>
       <h3>Kurtarmayı onayla</h3>
-      <p><strong>Bu workspace'teki tüm sahipli süreçler sonlandırılacak.</strong> Süreç grubu ölümü doğrulandıktan sonra klasör kilidi bırakılır ve çalışma başarısız olarak kapanır.</p>
+      <p><strong>Bu çalışma klasöründeki tüm sahipli süreçler sonlandırılacak.</strong> Süreç grubu ölümü doğrulandıktan sonra klasör kilidi bırakılır ve çalışma başarısız olarak kapanır.</p>
       {!!recovery?.owners.length&&<p className="chain-note mono">Etkilenecek PID: {recovery.owners.map(o=>o.pid).join(', ')}</p>}
       <div className="modal-actions"><button className="btn" disabled={busy} onClick={()=>setConfirmRecover(false)}>Vazgeç</button><button className="btn danger" disabled={busy} onClick={()=>void recover()}>{busy?'Kurtarılıyor…':'Süreçleri sonlandır ve kurtar'}</button></div>
     </Modal>}
-    {status==='WAITING_CONTEXT'&&<div className="notice" role="status">Otomatik devam durdu; inceleme gerekli. {detail.steps.map(s=>contextLabels[s.terminal_reason||'']).filter(Boolean).join(' ')} {!mobile.active&&<button className="btn" disabled={busy} onClick={()=>void retry()}>{busy?'…':'Yeniden dene'}</button>} {canInterrupt()&&<button className="btn danger" disabled={busy} onClick={()=>void cancel()}>Durdur</button>}</div>}
+    {status==='WAITING_CONTEXT'&&<div className="notice" role="status">Otomatik devam durdu; inceleme gerekli. {detail.steps.map(s=>contextLabels[s.terminal_reason||'']).filter(Boolean).join(' ')} {!mobile.active&&<button className="btn" disabled={busy} aria-busy={busy} onClick={()=>void retry()}>{busy?'…':'Yeniden dene'}</button>} {canInterrupt()&&<button className="btn danger" disabled={busy} onClick={()=>void cancel()}>Durdur</button>}</div>}
     {status==='WAITING_CAPACITY'&&plan?.status==='PENDING'?<div className="notice" role="status"><strong>Kota bekleniyor — otomatik yeniden deneme planlı.</strong>{' '}
       Deneme {plan.attempts_so_far} / {plan.max_attempts} · sonraki deneme {when(plan.next_retry_at)} · son süre {when(plan.deadline)}.{' '}
-      {!mobile.active&&<button className="btn" disabled={busy} onClick={()=>void retry()}>{busy?'…':'Şimdi dene'}</button>}{' '}
+      {!mobile.active&&<button className="btn" disabled={busy} aria-busy={busy} onClick={()=>void retry()}>{busy?'…':'Şimdi dene'}</button>}{' '}
       {canInterrupt()&&<button className="btn danger" disabled={busy} onClick={()=>void cancelWait()}>Beklemeyi iptal et</button>}</div>
-    :['WAITING_CAPACITY','WAITING_AUTH'].includes(status)&&<div className="notice" role="status">{labels[status]}. Otomatik devam yok; yeniden denemeyi siz başlatırsınız.{plan&&plan.closed_reason&&status==='WAITING_CAPACITY'?` Otomatik bekleme bitti: ${waitEnds[plan.closed_reason]||plan.closed_reason}.`:''} {!mobile.active&&<button className="btn" disabled={busy} onClick={()=>void retry()}>{busy?'…':'Yeniden dene'}</button>} {canInterrupt()&&status==='WAITING_AUTH'&&<button className="btn danger" disabled={busy} onClick={()=>void cancel()}>Durdur</button>}</div>}
+    :['WAITING_CAPACITY','WAITING_AUTH'].includes(status)&&<div className="notice" role="status">{labels[status]}. Otomatik devam yok; yeniden denemeyi siz başlatırsınız.{plan&&plan.closed_reason&&status==='WAITING_CAPACITY'?` Otomatik bekleme bitti: ${waitEnds[plan.closed_reason]||plan.closed_reason}.`:''} {!mobile.active&&<button className="btn" disabled={busy} aria-busy={busy} onClick={()=>void retry()}>{busy?'…':'Yeniden dene'}</button>} {canInterrupt()&&<button className="btn danger" disabled={busy} onClick={()=>void cancel()}>Durdur</button>}</div>}
     {status==='WAITING_HUMAN'&&<div className="notice" role="alert"><strong>Klasör kota beklenirken değişti — otomatik devam durdu.</strong>{' '}
       {changedPaths.length?`Değişen: ${changedPaths.slice(0,5).join(', ')}${changedPaths.length>5?` ve ${changedPaths.length-5} dosya daha`:''}. `:''}Değişiklikleri inceleyin; devam etmek için yeniden deneyin ya da yürütmeyi durdurun.{' '}
-      {!mobile.active&&<button className="btn" disabled={busy} onClick={()=>void retry()}>{busy?'…':'Yeniden dene'}</button>}{' '}
+      {!mobile.active&&<button className="btn" disabled={busy} aria-busy={busy} onClick={()=>void retry()}>{busy?'…':'Yeniden dene'}</button>}{' '}
       {canInterrupt()&&<button className="btn danger" disabled={busy} onClick={()=>void cancel()}>Durdur</button>}</div>}
     {status==='FAILED'&&plan?.status==='EXPIRED'&&<p className="notice" role="status">Otomatik bekleme bitti: {waitEnds[plan.closed_reason||'']||plan.closed_reason} ({plan.attempts_so_far} / {plan.max_attempts} deneme).</p>}
     {status==='WAITING_APPROVAL'&&<div className="notice" role="status">{labels.WAITING_APPROVAL}. Sağlayıcı bir aracı reddetti; bu yürütme kendiliğinden devam etmez. Durdurup yeni mesajla yeniden başlatın. {canInterrupt()&&<button className="btn danger" disabled={busy} onClick={()=>void cancel()}>Durdur</button>}</div>}
     {!embedded&&detail.policy&&<section className="card"><div className="card-h"><h2>Sağlayıcı zinciri</h2><span className="spacer"/><span className="accepted">Bu çalışma için donduruldu</span></div><div className="card-b"><Chains policy={detail.policy}/></div></section>}
-    <section className="card"><div className="card-h"><h2>Çalışma akışı</h2><span className="spacer"/><span className="chain-note">{detail.steps.filter(s=>s.status==='COMPLETED').length} / {detail.steps.length} adım tamamlandı</span></div>
+    <section className="card"><div className="card-h"><h2>Çalışma akışı</h2><span className="spacer"/><span className="chain-note" role="status">{detail.steps.filter(s=>s.status==='COMPLETED').length} / {detail.steps.length} adım tamamlandı</span></div>
     <div className="card-b timeline">{!detail.steps.length&&<p className="muted">Adımlar başlatılmadı.</p>}{detail.steps.map(s=><section className={`step ${s.status==='COMPLETED'?'done':s.status==='RUNNING'?'active':''}`} key={s.id}>
       <span className="node" aria-hidden="true">{s.status==='COMPLETED'?'✓':s.step_index+1}</span>
       <div className="step-head"><h3 className="t">{stepTitle(s)}</h3>{s.role&&<span className={'chip '+s.role}>{s.role==='author'?'Yazma':'Salt okunur'}</span>}<span className="spacer"/><Pill status={s.status} recovered={s.terminal_reason===RECOVERED}/></div>

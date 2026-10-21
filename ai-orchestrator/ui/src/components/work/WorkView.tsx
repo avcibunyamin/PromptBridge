@@ -231,7 +231,7 @@ export function WorkView({workId,onChange}:{workId:string;onChange:()=>void}){
   const commands:SlashCommand[]=[
     {name:'model',hint:'Yazarın modelini seç',run:()=>openSelect('Yazar model','Yazar sağlayıcı')},
     {name:'efor',hint:'Yazarın eforunu seç',run:()=>openSelect('Yazar efor','Yazar model','Yazar sağlayıcı')},
-    {name:'kota',hint:'Context ve kota penceresi',run:click('.composer .usage-ring')},
+    {name:'kota',hint:'Bağlam ve kota penceresi',run:click('.composer .usage-ring')},
     {name:'takim',hint:'Gelişmiş: yedekler ve inceleyici',run:click('.composer .composer-tools')},
     ...RECIPES.map(r=>({name:'tarif-'+r.id,hint:'Tarif: '+r.title,run:()=>setRecipe(r.id)})),
     ...(!mobile.active&&work&&!work.archived_at?[
@@ -270,7 +270,7 @@ export function WorkView({workId,onChange}:{workId:string;onChange:()=>void}){
         {work.blocked_reason==='needs_review_decision'&&<span className="pill warn"><span className="d" aria-hidden="true"/>Hedef doğrulanmadı</span>}
         {work.pending_messages>0&&<span className="pill idle">{work.pending_messages} mesaj sırada</span>}
         {work.archived_at&&<span className="pill idle">Arşivde</span>}
-        {live?<span className="live"><span className="dot"/>Canlı</span>:<span className="muted small">Bağlantı yok — yeniden deneniyor</span>}</div>
+        {live?<span className="live" role="status"><span className="dot"/>Canlı</span>:<span className="muted small" role="status">Bağlantı yok — yeniden deneniyor</span>}</div>
       <p className="path">{work.workspace_path}</p>
       {work.isolation&&<p className="muted small">Ayrı kopya{work.isolation.removed?' (kaldırıldı)':''} · dal <span className="mono">{work.isolation.branch}</span> · kaynak <span className="mono">{work.isolation.source}</span></p>}</div><span className="spacer"/>
       {!mobile.active&&work.isolation&&<button className="btn" disabled={!!work.blocked_reason&&['run_active','run_waiting','recovery_required','paused'].includes(work.blocked_reason)}

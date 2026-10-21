@@ -146,7 +146,7 @@ class SessionApiTests(unittest.TestCase):
 
     def test_cancel_waiting_states_and_preserve_waiting_capacity(self):
         with TestClient(self.app) as client:
-            for status in ('WAITING_APPROVAL', 'WAITING_AUTH', 'WAITING_CONTEXT'):
+            for status in ('WAITING_APPROVAL', 'WAITING_AUTH', 'WAITING_CONTEXT', 'WAITING_CAPACITY'):
                 sid = f'sess_{status.lower()}'
                 conn = store.connect(self.db)
                 repo.create_session(conn, sid, str(self.root), 'auto')
@@ -156,10 +156,18 @@ class SessionApiTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 202)
                 self.assertEqual(response.json(), {'status': 'CANCELLED'})
                 self.assertEqual(client.get(f'/api/sessions/{sid}').json()['session']['status'], 'CANCELLED')
-            cap_sid = 'sess_waiting_capacity'
+            cap_sid = 'sess_waiting_capacity_planned'
             conn = store.connect(self.db)
             repo.create_session(conn, cap_sid, str(self.root), 'auto')
             repo.update_session_status(conn, cap_sid, 'WAITING_CAPACITY')
+            conn.execute('PRAGMA foreign_keys=OFF')   # only the plan row matters here, not its step/snapshot
+            with store.transaction(conn):
+                conn.execute(
+                    "INSERT INTO retry_plans(id, session_id, step_id, baseline_snapshot_id, created_at, "
+                    "first_quota_at, next_retry_at, deadline, max_attempts, reason, status) "
+                    "VALUES ('plan_1', ?, 'step_1', 'snap_1', 'now', 'now', 'later', 'deadline', 3, 'QUOTA_EXCEEDED', 'PENDING')",
+                    (cap_sid,),
+                )
             conn.close()
             response = client.post(f'/api/sessions/{cap_sid}/cancel')
             self.assertEqual(response.status_code, 202)

@@ -321,6 +321,11 @@ async def cancel_session(sid: str, request: Request):
             if session['status'] in (
                 'QUEUED', 'PAUSED', 'WAITING_HUMAN',
                 'WAITING_APPROVAL', 'WAITING_AUTH', 'WAITING_CONTEXT',
+            ) or (
+                session['status'] == 'WAITING_CAPACITY' and not conn.execute(
+                    "SELECT 1 FROM retry_plans WHERE session_id=? AND status IN ('PENDING','FIRED')",
+                    (sid,),
+                ).fetchone()
             ):  # no worker holds queued/paused/operator-wait states
                 repo.update_session_status(conn, sid, 'CANCELLED')
                 _wake(request)

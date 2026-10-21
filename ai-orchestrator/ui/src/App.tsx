@@ -69,7 +69,7 @@ function Shell() {
     {/* K-040: ZeroCost's desktop sidebar — where it runs, then the control centre's sections, then recent works */}
     <div className="host-card d-only" title={location.host}>
       <span className="host-mono">P</span>
-      <span><strong>Bu Mac</strong><span>{version ? 'Yerel sunucu bağlı' : 'Bağlantı bekleniyor'}</span></span>
+      <span><strong>Bu Mac</strong><span role="status">{version ? 'Yerel sunucu bağlı' : 'Bağlantı bekleniyor'}</span></span>
       <span className={'status-dot' + (version ? ' online' : '')} aria-hidden />
     </div>
     <p className="nav-label d-only">KONTROL MERKEZİ</p>
@@ -83,7 +83,7 @@ function Shell() {
   const top = <header className="topbar d-only">
     <div className="crumbs"><span>Kontrol merkezi</span><ChevronRight aria-hidden /><strong>{PAGES[view]}</strong></div>
     <div className="topbar-right">
-      <span className={'status-dot' + (version ? ' online' : '')} aria-hidden />{version ? 'Yerel sunucu bağlı' : 'Bağlantı bekleniyor'}
+      <span className={'status-dot' + (version ? ' online' : '')} aria-hidden /><span role="status">{version ? 'Yerel sunucu bağlı' : 'Bağlantı bekleniyor'}</span>
       <span className="top-divider" aria-hidden />
       <button className="icon-btn plain" aria-label="Yeniden yükle" title="Paneli yeniden yükle" onClick={() => location.reload()}><RefreshCw aria-hidden /></button>
     </div>
@@ -163,29 +163,30 @@ function BridgePanel() {
       <header className="app-header">
         <span className="app-title">Dosya onayları</span>
         <div className="app-actions">
-          {!mobile.active && <button className="btn-ghost" onClick={handleReconcile} title="DELIVERING kayıtlarını uzlaştır">
+          {!mobile.active && <button className="btn-ghost" onClick={handleReconcile} title="İletiliyor durumunda kalan kayıtları uzlaştır">
             Uzlaştır
           </button>}
-          <span className={`live-indicator ${live ? 'live' : 'offline'}`}>
+          <span className={`live-indicator ${live ? 'live' : 'offline'}`} role="status">
             {live ? '● Canlı' : '○ Bağlantı yok'}
           </span>
         </div>
       </header>
 
       {error && (
-        <div className="error-banner">
+        <div className="error-banner" role="alert">
           ⚠ {error}
-          <button onClick={() => setError(null)}>✕</button>
+          <button type="button" aria-label="Hatayı kapat" onClick={() => setError(null)}>✕</button>
         </div>
       )}
 
       <div className="app-body">
         <aside className="sidebar">
-          <div className="filter-bar">
+          <div className="filter-bar" role="group" aria-label="Zarf durumu filtresi">
             {(['ALL', 'PENDING_APPROVAL', 'DELIVERED', 'REJECTED', 'FAILED'] as StateFilter[]).map(s => (
               <button
                 key={s}
                 className={`filter-btn ${filter === s ? 'active' : ''}`}
+                aria-pressed={filter === s}
                 onClick={() => setFilter(s)}
               >
                 {({ALL:'Tümü',PENDING_APPROVAL:'Onay bekliyor',DELIVERED:'İletildi',REJECTED:'Reddedildi',FAILED:'Hata'})[s]}

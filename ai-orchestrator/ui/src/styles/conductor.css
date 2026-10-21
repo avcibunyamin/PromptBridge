@@ -7,14 +7,14 @@
   --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
   /* K-037: ZeroCost palette — sage-tinted grays, one sage-green accent */
   --bg:#f7f9f8; --surface:#ffffff; --surface-2:#fbfcfb; --inset:#f0f5f1;
-  --ink:#28312f; --muted:#6f7a73; --faint:#97a19a;
+  --ink:#28312f; --muted:#5e6962; --faint:#66716a;
   --border:#e3e9e4; --border-strong:#d3dcd6;
   --accent:#36745c; --accent-ink:#fff; --accent-soft:#eaf3ee;
-  --author:#9a6a2f; --author-soft:#f3ece0;
+  --author:#7c5322; --author-soft:#f3ece0;
   --reviewer:#4f6b80; --reviewer-soft:#e7eef2;
-  --ok:#3f8068; --ok-soft:#eaf5ec;
-  --run:#4a6fa5; --run-soft:#e8eef6;
-  --warn:#a87a1e; --warn-soft:#f6efdf;
+  --ok:#336b56; --ok-soft:#eaf5ec;
+  --run:#3d5f90; --run-soft:#e8eef6;
+  --warn:#825c10; --warn-soft:#f6efdf;
   --bad:#b8483f; --bad-soft:#fcf0ec;
   --shadow:0 1px 2px rgba(23,62,24,.05),0 8px 24px -12px rgba(23,62,24,.14);
   --shadow-sm:0 2px 3px rgba(23,62,24,.06);
@@ -23,20 +23,7 @@
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   color-scheme:dark;
   --bg:#151a18; --surface:#1c2220; --surface-2:#212825; --inset:#121614;
-  --ink:#e7ede9; --muted:#9ba8a0; --faint:#6d7a73;
-  --border:#2a3330; --border-strong:#38443f;
-  --accent:#6db394; --accent-ink:#0d1a14; --accent-soft:#1f3229;
-  --author:#d4a063; --author-soft:#3a2f2299;
-  --reviewer:#a3b8c8; --reviewer-soft:#2a333a99;
-  --ok:#7dbf9c; --ok-soft:#1f302733; --run:#8fa9cc; --run-soft:#26303c;
-  --warn:#d2a24c; --warn-soft:#3a3122; --bad:#e07a6f; --bad-soft:#3d2523;
-  --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 30px -14px rgba(0,0,0,.6);
-  --shadow-sm:0 1px 2px rgba(0,0,0,.35);
-}}
-:root[data-theme="dark"]{
-  color-scheme:dark;
-  --bg:#151a18; --surface:#1c2220; --surface-2:#212825; --inset:#121614;
-  --ink:#e7ede9; --muted:#9ba8a0; --faint:#6d7a73;
+  --ink:#e7ede9; --muted:#9ba8a0; --faint:#8d9b93;
   --border:#2a3330; --border-strong:#38443f;
   --accent:#6db394; --accent-ink:#0d1a14; --accent-soft:#1f3229;
   --author:#d4a063; --author-soft:#3a2f2299;
@@ -46,6 +33,21 @@
   --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 30px -14px rgba(0,0,0,.6);
   --shadow-sm:0 1px 2px rgba(0,0,0,.35);
 }
+:root:not([data-theme="light"]) .btn.danger,:root:not([data-theme="light"]) .btn.approve{color:var(--accent-ink)}}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#151a18; --surface:#1c2220; --surface-2:#212825; --inset:#121614;
+  --ink:#e7ede9; --muted:#9ba8a0; --faint:#8d9b93;
+  --border:#2a3330; --border-strong:#38443f;
+  --accent:#6db394; --accent-ink:#0d1a14; --accent-soft:#1f3229;
+  --author:#d4a063; --author-soft:#3a2f2299;
+  --reviewer:#a3b8c8; --reviewer-soft:#2a333a99;
+  --ok:#7dbf9c; --ok-soft:#1f302733; --run:#8fa9cc; --run-soft:#26303c;
+  --warn:#d2a24c; --warn-soft:#3a3122; --bad:#e07a6f; --bad-soft:#3d2523;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 30px -14px rgba(0,0,0,.6);
+  --shadow-sm:0 1px 2px rgba(0,0,0,.35);
+}
+:root[data-theme="dark"] .btn.danger,:root[data-theme="dark"] .btn.approve{color:var(--accent-ink)}
 *{box-sizing:border-box}
 html,body{height:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}

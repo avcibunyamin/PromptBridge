@@ -67,7 +67,7 @@ export function OverviewPage({onOpenWork,onNewWork,onApprovals,onSettings}:{onOp
           {a.groups.map(g=>{const w=bottleneck(g), l=lowest(g), soon=w?resetText(w):null   // the window that runs out first
             return <div key={g.key} className="quota-row">
               <span className="small">{TITLES[g.key]??g.title}</span>
-              <div className={'bar '+tone(l)}><span style={{width:`${l??0}%`}}/></div>
+              <div className={'bar '+tone(l)} aria-hidden="true"><span style={{width:`${l??0}%`}}/></div>
               <span className="small mono">{l===null?'—':`%${Math.round(l)}`}</span>
               {soon&&l!==null&&l<100&&<span className="small muted">{soon} sonra yenilenir</span>}
             </div>})}

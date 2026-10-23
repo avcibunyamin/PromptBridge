@@ -6,6 +6,27 @@ PromptBridge (Conductor) projesine katkıda bulunmak istediğiniz için teşekk�
 
 ---
 
+## Dış Katkıcılar İçin
+
+PromptBridge projesine dışarıdan katkıda bulunmak için lütfen aşağıdaki adımları izleyin:
+
+1. **Çatal (Fork) ve Dal (Branch):** Depoyu GitHub üzerinde fork'layın ve kendi deponuzda yeni bir özellik veya hata düzeltme dalı oluşturun (`git checkout -b ozellik-adi`).
+2. **Testleri Çalıştırma:** Değişikliklerinizi göndermeden önce arka uç ve ön yüz testlerinin başarıyla tamamlandığını doğrulayın:
+   - Arka uç testleri:
+     ```sh
+     cd ai-orchestrator && .venv/bin/python -m unittest discover -s tests
+     ```
+   - Ön yüz testleri ve derleme:
+     ```sh
+     cd ui && npm test && npm run build
+     ```
+     *(Depo kökünden çalıştırmak için: `cd ai-orchestrator/ui && npm test && npm run build`)*
+3. **Pull Request:** Değişikliklerinizi `main` dalına yönelik küçük ve tek bir amaca odaklanmış bir Pull Request (PR) olarak açın.
+4. **Kod Dili:** Tüm kodlar, fonksiyon/değişken adları, yorumlar ve commit mesajları İngilizce olmalıdır.
+5. **Güvenlik Açıkları:** Güvenlik açıklarını kesinlikle herkese açık GitHub Issues veya PR üzerinden bildirmeyin; sorumlu bildirim adımları için [SECURITY.md](SECURITY.md) belgesine bakın.
+
+---
+
 ## 1. Geliştirme Ortamı Kurulumu
 
 ```sh
@@ -56,7 +77,7 @@ npm run build
 
 ---
 
-## 3. Dal (Branch) ve İnceleme Akışı
+## 3. Dal (Branch) ve İnceleme Akışı (Maintainers' Own Workflow)
 
 PromptBridge geliştirme süreci kendi mimarisiyle uyumlu olarak **ayrı çalışma kopyası (worktree / branch)** ve **bağımsız inceleyici** ilkelerine dayanır:
 
@@ -84,6 +105,25 @@ PromptBridge geliştirme süreci kendi mimarisiyle uyumlu olarak **ayrı çalı�
 
 Thank you for your interest in contributing to **PromptBridge (Conductor)**!
 
+### For External Contributors
+
+If you are an external contributor, please follow this workflow:
+
+1. **Fork & Branch:** Fork the repository on GitHub and create a dedicated feature or bugfix branch on your fork (`git checkout -b your-feature-branch`).
+2. **Run Tests:** Ensure both backend and frontend test suites pass and the UI builds cleanly before opening a pull request:
+   - Backend tests:
+     ```sh
+     cd ai-orchestrator && .venv/bin/python -m unittest discover -s tests
+     ```
+   - Frontend tests & build:
+     ```sh
+     cd ui && npm test && npm run build
+     ```
+     *(or from the repository root: `cd ai-orchestrator/ui && npm test && npm run build`)*
+3. **Pull Request:** Open a pull request against the `main` branch. Keep pull requests small and focused on a single change or fix.
+4. **Code, Comments, and Commit Messages:** All source code, identifiers, comments, and commit messages must be written in English.
+5. **Security Vulnerabilities:** Do **not** report security vulnerabilities as public GitHub issues or PRs. Please refer to [SECURITY.md](SECURITY.md) for private disclosure instructions.
+
 ### Running Tests
 
 Before submitting a pull request, verify that both backend and frontend test suites and builds succeed.
@@ -104,7 +144,7 @@ Before submitting a pull request, verify that both backend and frontend test sui
    npm run build
    ```
 
-### Branching and Review Workflow
+### Maintainers' Own Workflow
 
 1. **Isolated Branches / Worktrees:**
    - Develop features and fixes on a dedicated branch or Git worktree (`../PromptBridge-<branch>` or `~/.conductor/worktrees/...`), never directly on `main`.

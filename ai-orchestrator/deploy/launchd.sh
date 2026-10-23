@@ -79,6 +79,7 @@ install)
     mkdir -p "$(dirname "$PLIST")"
     mv "$tmp" "$PLIST"; chmod 644 "$PLIST"
     bootstrap
+    launchctl kickstart "$SERVICE" >/dev/null 2>&1 || true   # a just-replaced job can stay loaded but not started (2026-10-23); kickstart without -k only starts it if idle
     for _ in $(seq 1 80); do
         if health >/dev/null; then echo "installed $LABEL on port $PORT"; health; echo; exit 0; fi
         sleep 0.25

@@ -1,0 +1,14 @@
+# Preset configuration for running solely with Codex.
+# Copy this file to .system/providers.yaml to activate.
+# Both author and reviewer roles use Codex with isolated execution contexts.
+
+roles:
+  author:
+    - provider: codex
+      profile: WRITE
+  reviewer:
+    # The reviewer runs as an independent, fresh session separate from the author.
+    - provider: codex
+      profile: READ_ONLY
+require_handover_approval: false
+max_context_continuations: 3

@@ -1,0 +1,14 @@
+# Preset configuration for running solely with Claude.
+# Copy this file to .system/providers.yaml to activate.
+# Both author and reviewer roles use Claude with isolated execution contexts.
+
+roles:
+  author:
+    - provider: claude
+      profile: WRITE
+  reviewer:
+    # The reviewer runs as an independent, fresh session separate from the author.
+    - provider: claude
+      profile: READ_ONLY
+require_handover_approval: false
+max_context_continuations: 0

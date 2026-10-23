@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-10-23
+
+### Added
+- English-first README (Turkish moved to `README.tr.md`) with provider sign-in steps, a "what runs without asking you" section, data flow & security, a platform table and a terms-of-service note.
+- Provider presets: `providers.claude-only.yaml`, `providers.codex-only.yaml`, `providers.ollama-local.yaml`.
+- Issue and pull request templates; an external contributor section in CONTRIBUTING.
+
+### Fixed
+- `deploy/launchd.sh install` now starts an agent that macOS loaded but did not start.
+
 ## [0.3.1] - 2026-10-23
 
 ### Fixed
@@ -43,7 +53,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Safety: loopback-only server, cross-site guard on every mutating endpoint, prompts never passed through a shell, read-only reviewers, git hook/config change reporting.
 - Turkish and English user guides, MIT license.
 
-[Unreleased]: https://github.com/avcibunyamin/PromptBridge/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/avcibunyamin/PromptBridge/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/avcibunyamin/PromptBridge/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/avcibunyamin/PromptBridge/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/avcibunyamin/PromptBridge/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/avcibunyamin/PromptBridge/compare/v0.1.0...v0.2.0

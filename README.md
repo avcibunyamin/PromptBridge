@@ -1,124 +1,130 @@
-# PromptBridge (Conductor)
+**English** · [Türkçe](README.tr.md)
 
-**PromptBridge (Conductor)**, yapay zeka kodlama CLI araçlarını (**Claude Code**, **Antigravity `agy` / Gemini**, **Codex**, **Ollama**) **yazar → inceleyici** zincirinde, **API anahtarı gerekmeden kendi mevcut aboneliklerinle** ve **tamamen yerelde** (`127.0.0.1`) çalıştıran insan onaylı bir çoklu-AI orkestrasyon sistemidir.
+# PromptBridge
 
-Bir model kodu yazar (yazma yetkili profil), bağımsız bir model ise salt okunur araçlarla kodu inceler ve bulgularını raporlar. Her adım, onay ve durum geçişi yerel SQLite veritabanında denetlenebilir biçimde kayıt altına alınır.
+**PromptBridge — a supervised AI coding team on your own machine.**
 
----
+- Run **Claude Code**, **Codex**, **Antigravity (Gemini)** and **Ollama** as an **author → independent read-only reviewer** team.
+- For developers who already pay for AI coding subscriptions and want a second model to check the first — **no API keys needed**.
+- A different model reviews every change, your tests run before review as evidence (macOS sandbox), and every step is logged in an append-only local audit trail.
 
-## Ekran ve Sistem Özellikleri
-
-- **Çalışmalar (Works):** Proje klasörlerinde kalıcı çalışma oturumları başlatın. İsteğe bağlı **ayrı kopyada çalışma (git worktree)** ile ana çalışma klasörünüze dokunmadan paralel görevler yürütün ve bittiğinde tek tıkla ana klasöre birleştirin. Sonuca göre **yazar ↔ inceleyici döngüsü**, devam kapısı ve çökme sonrası süreç kurtarma (`RECOVERY_REQUIRED`) desteklenir.
-- **Onaylar (Approvals):** İki yönlü dosya aktarım kuyruğunda yakalanan çıktıları ve sağlayıcıların istediği araç izinlerini panelden önizleyin, düzenleyin, onaylayın veya reddedin.
-- **Kota / Bağlam Halkası ve Yedek Zinciri:** Mesaj kutusunda model, hesap ve düşünme eforunu (`provider[@<hesap>][/model][~effort]`) seçin; model/efor seçicinin yanındaki **bağlam/kota halkası** üzerinden bağlam kullanım oranını (doluluk) ve kalan kotayı (renk) izleyin. Mesaj kutusunun başında `/` kısayollarıyla (`/model`, `/efor`, `/kota`, `/takim`, `/onizleme`, `/testler`, `/github`, `/yeni`) seçicileri ve panelleri hızla açın. Bir sağlayıcıda kota dolduğunda zincirdeki yedek sağlayıcıya otomatik devredilir veya sınırlı kota bekleme planı devreye girer.
-- **Testler ve Lint / Tip Denetimi:** İnceleyici adımdan önce onayladığınız test (`unittest`, `pytest`, `npm test`) ve lint/tip denetimi (`ruff`, `flake8`, `mypy`, `tsc`, `npm run lint`) komutları ağsız korumalı alanda otomatik koşar; sonuçlar doğrudan inceleyiciye kanıt olarak sunulur.
-- **Önizleme (Preview):** Çalışma klasöründeki web/uygulama sunucusunu onaylı komutla panel içinden başlatın, durdurun ve görüntüleyin (isteğe bağlı macOS `sandbox-exec` korumalı alan desteğiyle).
-- **GitHub Entegrasyonu:** Yerel `gh` oturumunuzu kullanarak panelden depo klonlayın, gizli dosya ve iş akışı (workflow) uyarılarıyla güvenli commit oluşturun, yeni dala push yapın ve **taslak PR (Draft PR)** açın.
-- **Telefon Erişimi (Mobil Geçit):** Tailscale üzerinden şifreli bağlantıyla telefonunuzu 6 haneli tek kullanımlık kodla eşleştirin. Çalışmaları canlı izleyin, onay verin; izin verdiğiniz cihazlardan yürütmeyi durdurun veya yeni görev gönderin.
-- **Mac Uygulaması ve `launchd` Servisi:** Web panelinin yanı sıra yerel SwiftUI Mac uygulaması (`apps/mac`) ve makine açılışında otomatik başlayan `launchd` arka plan servisi ile kesintisiz çalışır.
+> **Naming:** the product is **PromptBridge**. **Conductor** is only the name of its internal server component (the local watcher + API + web panel process in `ai-orchestrator/`).
 
 ---
 
-## Gereksinimler
+## Requirements
 
-- **İşletim Sistemi:** macOS (launchd, Keychain, `sandbox-exec` ve SwiftUI Mac uygulaması için önerilir) veya Linux (temel sunucu ve web paneli)
-- **Python:** Python 3.12+
-- **Node.js:** Node.js 18+ ve `npm` (React/TypeScript panelini derlemek için)
-- **Sağlayıcı CLI Araçları (en az biri):**
-  - **Claude Code** (`claude` CLI — kendi Claude aboneliğinizle giriş yapılmış)
-  - **Antigravity CLI** (`agy` — Google hesabınızla Gemini / Claude modelleri)
-  - **Codex CLI** (`codex` — ChatGPT aboneliğinizle giriş yapılmış)
-  - **Ollama** (`ollama` — `127.0.0.1:11434` üzerinde yerel araç destekli modeller)
-- **İsteğe Bağlı Araçlar:**
-  - `gh` (GitHub CLI — GitHub klonlama ve taslak PR akışı için)
-  - `tailscale` (Telefon eşleştirme ve mobil erişim için)
-  - Xcode Command Line Tools (`swiftc` — `apps/mac` yerel Mac uygulamasını derlemek için)
+- **OS:** macOS (primary). Linux: server and panel only — see [Platform support](#platform-support).
+- **Python 3.12+** and **Node.js 18+** (on macOS: `brew install python@3.12 node`).
+- **At least one provider CLI:** Claude Code (`claude`), Antigravity (`agy`), Codex (`codex`) or Ollama (`ollama`).
+- Optional: `gh` (GitHub clone / draft PR), `tailscale` (phone access), Xcode Command Line Tools (Mac app).
 
 ---
 
-## Hızlı Kurulum
+## Quick start
 
-```sh
-# 1. Python sanal ortamını kurun ve bağımlılıkları yükleyin
-cd ai-orchestrator
-python3.12 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
+All commands after step 1 run inside `ai-orchestrator/`.
 
-# 2. Sağlayıcı politika dosyasını oluşturun
-mkdir -p .system
-cp providers.example.yaml .system/providers.yaml
-# Varsayılan zincir codex ve claude ister; yalnız birini kurduysanız .system/providers.yaml içindeki roles listelerinden kurulu olmayanı silin.
+1. **Clone:**
+   ```sh
+   git clone https://github.com/avcibunyamin/PromptBridge && cd PromptBridge
+   cd ai-orchestrator
+   ```
+2. **Create a virtual environment and install requirements:**
+   ```sh
+   python3.12 -m venv .venv
+   .venv/bin/python -m pip install -r requirements.txt
+   ```
+3. **Create `.system/providers.yaml`** — copy the example, or a preset that matches the CLIs you have:
+   ```sh
+   mkdir -p .system
+   cp providers.example.yaml .system/providers.yaml      # default chain (codex + claude)
+   # or: providers.claude-only.yaml / providers.codex-only.yaml / providers.ollama-local.yaml
+   ```
+4. **Build the panel:**
+   ```sh
+   cd ui && npm install && npm run build && cd ..
+   ```
+5. **Sign in providers** (only the ones you use):
+   - **Claude Code:** run `claude` and use `/login`.
+   - **Codex:** `CODEX_HOME="$PWD/.system/codex-home" codex login`
+   - **Antigravity:** add the account in the panel under **Settings → Accounts** and run the command shown there.
+   - **Ollama:** `ollama serve`
+6. **Start the server:**
+   ```sh
+   .venv/bin/python -m app serve
+   ```
+7. **Open <http://127.0.0.1:8765/ui/>.** The first-run guide on the overview page walks you through the rest.
+8. **Optional — auto-start on macOS:** `deploy/launchd.sh install`. Stop it with `deploy/launchd.sh uninstall`; a plain `kill` is restarted by launchd.
 
-# 3. Web panelini derleyin
-cd ui && npm install && npm run build && cd ..
-
-# 4. Sunucuyu başlatın (veya launchd servisi olarak kurun)
-.venv/bin/python -m app serve
-# Otomatik başlatma için (macOS): deploy/launchd.sh install
-
-# 5. Sağlık kontrolü
-curl -s http://127.0.0.1:8765/health
-```
-
-Tarayıcıdan yönetim panelini açın: **<http://127.0.0.1:8765/ui/>**
-
-İsteğe bağlı olarak yerel Mac uygulamasını (`/Applications/PromptBridge.app`) kurmak için:
-
-```sh
-cd ../apps/mac  # ai-orchestrator içindeyseniz
-make install
-```
-
----
-
-## Belgeler
-
-- **[Kullanım Kılavuzu (Türkçe)](docs/KULLANIM-KILAVUZU.md):** Kurulum, sağlayıcı hesap bağlama (`agy`, Codex, Claude, Ollama), `providers.yaml`, ilk çalışma, mesaj kutusu, testler, önizleme, GitHub, telefon eşleştirme, Mac uygulaması, güvenlik modeli ve SSS.
-- **[User Guide (English)](docs/USER-GUIDE.md):** Full English user guide covering installation, provider setup, workflows, mobile pairing, security model, troubleshooting, and FAQ.
-- **[Operatör Rehberi](OPERATOR-REHBERI.md):** Günlük işletim, canlıya geçiş prosedürü, yedekleme/geri dönüş ve ayrıntılı sorun giderme.
-- **[Mimari Doküman](AI-Orkestrasyon-Mimari-Dokumani.md):** Sistem mimarisi, durum makineleri, güvenlik sınırları ve faz kararları.
-- **[Katkıda Bulunma (CONTRIBUTING.md)](CONTRIBUTING.md):** Testleri çalıştırma, dal ve yazar → inceleyici inceleme akışı.
-- **[Güvenlik Politikası (SECURITY.md)](SECURITY.md):** Güvenlik açığı bildirimi ve tehdit modeli özeti.
-- **[Sürüm Notları (CHANGELOG.md)](CHANGELOG.md):** Sürüm notları ve değişiklik geçmişi.
-- **[Sunucu README](ai-orchestrator/README.md)** · **[Mac Uygulaması README](apps/mac/README.md)**
+Optional native Mac app: `cd ../apps/mac && make install` (see [apps/mac/README.md](apps/mac/README.md)).
 
 ---
 
-## Lisans
+## How it works
 
-Bu proje [MIT Lisansı](LICENSE) altında açık kaynak olarak lisanslanmıştır. (`Copyright (c) 2026 PromptBridge contributors`)
+1. You pick a project folder and a team (author + reviewer) and write the task.
+2. The **author** model makes the change with a write-enabled profile.
+3. Your approved **tests and lint run first** (in a no-network sandbox on macOS); the results go to the reviewer as evidence.
+4. A **different, independent reviewer** model inspects the diff with **read-only** tools and reports findings.
+5. The author addresses the findings; you accept the result when you are satisfied.
+
+For first runs, an **isolated copy** (separate git worktree) is recommended: your source folder is not touched until you click **Bring to source folder**.
 
 ---
 
-## English Overview
+## What runs without asking you
 
-**PromptBridge (Conductor)** is a local, human-in-the-loop multi-AI orchestrator that runs AI coding CLIs (**Claude Code**, **Antigravity `agy` / Gemini**, **Codex**, **Ollama**) in a supervised **author → reviewer** chain using **your own existing subscriptions** (no API keys required) on `127.0.0.1`.
+- **You approve** the team and the provider tool permissions.
+- The **author → reviewer handover is automatic** by default (`require_handover_approval: false`).
+- If **loop** is enabled, rounds continue automatically.
+- When a provider's quota runs out, **only the next provider in the chain** takes over — nothing outside the chain you configured.
 
-### Key Capabilities
+---
 
-- **Supervised Works & Isolated Worktrees:** Run coding tasks directly in a project folder or in an isolated Git copy (`~/.conductor/worktrees/...`). An author model implements changes while a separate read-only reviewer model inspects the diff and test results.
-- **Approvals & Auditability:** Every file transfer, command approval, and state transition is recorded in an append-only SQLite audit log with CAS state transitions.
-- **Quota / Context Ring & Automatic Fallback:** Select model, account, and reasoning effort directly from the composer, monitor the live context/quota ring (fill shows context usage, color shows remaining quota), use `/` shortcuts to open composer selectors and panels, and automatically fall back to secondary providers or wait plans when rate limits are reached.
-- **Pre-Review Tests, Lint & Preview:** Run approved test suites and linters in a network-isolated sandbox before the reviewer runs, and preview local dev servers right from the panel.
-- **GitHub & Mobile Companion:** Clone repositories, commit with secret/workflow guards, push branches, and open Draft PRs via your local `gh` session. Pair your phone over Tailscale HTTPS with a one-time 6-digit code to monitor works, approve requests, stop runs, or dispatch tasks.
+## Data flow & security
 
-### Quick Start
+- The server listens **only on 127.0.0.1** — but your **code and prompts go to the cloud providers you choose**. Only **Ollama** stays local.
+- **Phone access** goes through **your own Tailscale tailnet**. New devices can only view and approve; stop/dispatch must be enabled per device on the Mac.
+- **Reviewers are read-only.**
+- **Prompts never pass through a shell.**
+- Details and vulnerability reporting: [SECURITY.md](SECURITY.md).
 
-```sh
-cd ai-orchestrator
-python3.12 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
-mkdir -p .system && cp providers.example.yaml .system/providers.yaml
-# The default chain requires codex and claude; if you only installed one, remove the missing one from the roles lists in .system/providers.yaml.
-cd ui && npm install && npm run build && cd ..
-.venv/bin/python -m app serve
-```
+---
 
-Optional native Mac app (`/Applications/PromptBridge.app`):
+## Platform support
 
-```sh
-cd ../apps/mac  # if inside ai-orchestrator
-make install
-```
+| Feature | macOS | Linux |
+| --- | :---: | :---: |
+| Server + web panel | ✓ | ✓ |
+| launchd auto-start | ✓ | — (macOS only) |
+| Pre-review tests in a no-network sandbox | ✓ | — (not available on Linux) |
+| Preview sandbox (optional) | ✓ | — (macOS only) |
+| Antigravity account isolation via keychain | ✓ | — |
+| Mac app | ✓ | — |
+| Phone via Tailscale | ✓ | ✓ |
 
-Open **<http://127.0.0.1:8765/ui/>** in your browser. For full instructions, see the **[English User Guide](docs/USER-GUIDE.md)**, **[Contributing Guide](CONTRIBUTING.md)**, **[Security Policy](SECURITY.md)**, and **[Changelog](CHANGELOG.md)**. Licensed under the **[MIT License](LICENSE)**.
+---
+
+## Your responsibility
+
+Using several subscription accounts and automatic fallback between them may be limited by each provider's terms of service. Check the terms of every provider you use.
+
+---
+
+## Documentation
+
+- [User Guide (English)](docs/USER-GUIDE.md) — installation, provider setup, workflows, phone pairing, security model, troubleshooting, FAQ.
+- [Kullanım Kılavuzu (Türkçe)](docs/KULLANIM-KILAVUZU.md) — Turkish user guide.
+- [Operator guide (Turkish)](OPERATOR-REHBERI.md) — daily operations, backup/restore, troubleshooting.
+- [Architecture document (Turkish)](AI-Orkestrasyon-Mimari-Dokumani.md) — state machines, security boundaries, design decisions.
+- [CONTRIBUTING.md](CONTRIBUTING.md) — running tests, branches, author → reviewer flow.
+- [SECURITY.md](SECURITY.md) — vulnerability reporting and threat model.
+- [CHANGELOG.md](CHANGELOG.md) — release notes.
+- [Server README](ai-orchestrator/README.md) · [Mac app README](apps/mac/README.md)
+
+---
+
+## License
+
+[MIT](LICENSE) — `Copyright (c) 2026 PromptBridge contributors`.

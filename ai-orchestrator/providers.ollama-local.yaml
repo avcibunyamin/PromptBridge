@@ -1,0 +1,16 @@
+# Preset configuration for running completely locally with Ollama.
+# Copy this file to .system/providers.yaml to activate.
+# Runs locally on your machine with no external network calls or cloud API usage.
+
+roles:
+  author:
+    # replace the model with one you pulled: ollama pull <model>
+    - provider: ollama/qwen2.5-coder:7b
+      profile: WRITE
+  reviewer:
+    # Reviewer runs in a separate, fresh session from the author.
+    # replace the model with one you pulled: ollama pull <model>
+    - provider: ollama/qwen2.5-coder:7b
+      profile: READ_ONLY
+require_handover_approval: false
+max_context_continuations: 0

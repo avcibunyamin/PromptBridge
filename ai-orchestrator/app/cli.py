@@ -16,6 +16,7 @@ Commands:
     reject <eid>        Reject an envelope
     reconcile           Resolve DELIVERING envelopes after a restart
     capture <path>      Manually capture a file (bypass watcher)
+    doctor              Check the installation (no provider calls)
 """
 
 from __future__ import annotations
@@ -323,6 +324,11 @@ def cmd_capture(args, root: Path) -> int:
     return 0
 
 
+def cmd_doctor(args, root: Path) -> int:
+    from . import doctor
+    return doctor.run(root)
+
+
 # ── argument parser ────────────────────────────────────────────────────────────
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -375,6 +381,8 @@ def _build_parser() -> argparse.ArgumentParser:
     cap.add_argument("path", help="Path to the file to capture")
     cap.add_argument('--source', choices=('chatgpt', 'claude'), default='chatgpt')
 
+    sub.add_parser("doctor", help="Check the installation (no provider calls)")
+
     return p
 
 
@@ -389,6 +397,7 @@ _COMMANDS = {
     "reject": cmd_reject,
     "reconcile": cmd_reconcile,
     "capture": cmd_capture,
+    "doctor": cmd_doctor,
 }
 
 

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-10-23
+
+### Added
+- `python -m app doctor`: checks Python, `.system/providers.yaml`, provider CLIs, the built panel, Node and the local server without calling any provider.
+- A panel screenshot in the README (demo fixture, fake providers).
+
+### Changed
+- SECURITY.md: the Antigravity per-account keychain is created with an empty password and kept unlocked (any process of the same macOS user can read it); code and prompts go to the cloud providers you choose.
+- Turkish README no longer says "fully local".
+
 ## [0.3.2] - 2026-10-23
 
 ### Added
@@ -53,7 +63,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Safety: loopback-only server, cross-site guard on every mutating endpoint, prompts never passed through a shell, read-only reviewers, git hook/config change reporting.
 - Turkish and English user guides, MIT license.
 
-[Unreleased]: https://github.com/avcibunyamin/PromptBridge/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/avcibunyamin/PromptBridge/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/avcibunyamin/PromptBridge/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/avcibunyamin/PromptBridge/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/avcibunyamin/PromptBridge/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/avcibunyamin/PromptBridge/compare/v0.2.0...v0.3.0

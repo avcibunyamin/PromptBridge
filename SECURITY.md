@@ -45,6 +45,8 @@ PromptBridge, yerel bir geliştirici makinesinde birden fazla yapay zeka kodlama
 
 - **Yerel Kullanıcı / Root Yetkisi:** Aynı macOS/Linux kullanıcı hesabında tam yetkiyle çalışan diğer süreçler SQLite dosyasına (`.system/state.db`) doğrudan erişebilir; PromptBridge yerel işletim sistemi kullanıcısına karşı bir DRM/yetkilendirme kalkanı değildir.
 - **Yazar (`WRITE`) Profilinin Çalışma Klasörü Erişimi:** Yazar rolündeki ajan, görevini yerine getirmek için hedef çalışma klasöründeki dosyaları düzenleme yetkisine sahiptir. Ana proje klasörünüzü korumak için **Ayrı kopyada çalış (git worktree)** özelliğini kullanmanız önerilir.
+- **Antigravity (agy) Anahtar Zinciri ve Oturum Belirteçleri:** Antigravity (agy) hesap başına izole anahtar zinciri boş parolayla oluşturulur ve açık tutulur ki agy etkileşimsiz çalışsın; aynı macOS kullanıcı hesabıyla çalışan herhangi bir süreç bu anahtar zincirini açıp içindeki oturum belirteçlerini okuyabilir. Koruma macOS kullanıcı hesabının kendisidir; bilgisayarı paylaşıyorsanız ya da güvenmediğiniz yazılım çalıştırıyorsanız agy hesaplarını kullanmayın. `.system/agy-home-<account>` klasörünü yedeklere ve paylaşımlara koymayın.
+- **Bulut Sağlayıcılar ve Veri Saklama:** Sunucu yalnız 127.0.0.1'de dinler, ancak kod ve istemler seçtiğiniz bulut sağlayıcılara (Anthropic, OpenAI, Google) gider; yalnız Ollama yereldir. PromptBridge bu sağlayıcıların veri saklama politikalarını değiştirmez.
 
 ---
 
@@ -87,3 +89,5 @@ PromptBridge orchestrates multiple AI coding CLI tools (Claude Code, Antigravity
 
 - **Local User / Root Access:** Other processes running with full privileges under the same macOS/Linux user account can directly access the SQLite file (`.system/state.db`); PromptBridge is not a DRM or authorization shield against the local OS user.
 - **Writer (`WRITE`) Profile Workspace Access:** An agent in the writer role is authorized to edit files in the target workspace to fulfill its task. To protect your main project directory, using the **Work in isolated copy (git worktree)** feature is recommended.
+- **Antigravity (agy) Keychain and Session Tokens:** The per-account isolated keychain for Antigravity (agy) is created with an empty password and kept unlocked so that agy can run non-interactively; any process running under the same macOS user account can open this keychain and read the session tokens inside. The protection is the macOS user account itself; do not use agy accounts if you share the computer or run untrusted software. Do not include the `.system/agy-home-<account>` directory in backups or shares.
+- **Cloud Providers and Data Retention:** The server listens only on 127.0.0.1, but code and prompts are sent to your chosen cloud providers (Anthropic, OpenAI, Google); only Ollama is local. PromptBridge does not alter the data retention policies of these providers.

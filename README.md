@@ -8,6 +8,9 @@
 - For developers who already pay for AI coding subscriptions and want a second model to check the first — **no API keys needed**.
 - A different model reviews every change, your tests run before review as evidence (macOS sandbox), and every step is logged in an append-only local audit trail.
 
+![A work in the PromptBridge panel: the author (Codex) writes, an independent read-only reviewer (Claude) checks, the author corrects](docs/images/panel-work.png)
+<sub>Demo data from a test fixture with fake providers.</sub>
+
 > **Naming:** the product is **PromptBridge**. **Conductor** is only the name of its internal server component (the local watcher + API + web panel process in `ai-orchestrator/`).
 
 ---
@@ -50,8 +53,9 @@ All commands after step 1 run inside `ai-orchestrator/`.
    - **Codex:** `CODEX_HOME="$PWD/.system/codex-home" codex login`
    - **Antigravity:** add the account in the panel under **Settings → Accounts** and run the command shown there.
    - **Ollama:** `ollama serve`
-6. **Start the server:**
+6. **Check the setup, then start the server:**
    ```sh
+   .venv/bin/python -m app doctor     # python, providers.yaml, CLIs, panel — no provider calls
    .venv/bin/python -m app serve
    ```
 7. **Open <http://127.0.0.1:8765/ui/>.** The first-run guide on the overview page walks you through the rest.

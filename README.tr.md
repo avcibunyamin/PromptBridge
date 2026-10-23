@@ -2,7 +2,10 @@
 
 # PromptBridge (Conductor)
 
-**PromptBridge (Conductor)**, yapay zeka kodlama CLI araçlarını (**Claude Code**, **Antigravity `agy` / Gemini**, **Codex**, **Ollama**) **yazar → inceleyici** zincirinde, **API anahtarı gerekmeden kendi mevcut aboneliklerinle** ve **tamamen yerelde** (`127.0.0.1`) çalıştıran insan onaylı bir çoklu-AI orkestrasyon sistemidir.
+![PromptBridge panelinde bir çalışma: yazar (Codex) yazar, bağımsız salt okur inceleyici (Claude) denetler, yazar düzeltir](docs/images/panel-work.png)
+<sub>Sahte sağlayıcılı test fikstüründen örnek veri.</sub>
+
+**PromptBridge (Conductor)**, yapay zeka kodlama CLI araçlarını (**Claude Code**, **Antigravity `agy` / Gemini**, **Codex**, **Ollama**) **yazar → inceleyici** zincirinde, **API anahtarı gerekmeden kendi mevcut aboneliklerinle** ve **yerel bir sunucuyla** (`127.0.0.1`; kod ve istemler seçtiğiniz bulut sağlayıcılara gider, yalnız Ollama yereldir) çalıştıran insan onaylı bir çoklu-AI orkestrasyon sistemidir.
 
 Bir model kodu yazar (yazma yetkili profil), bağımsız bir model ise salt okunur araçlarla kodu inceler ve bulgularını raporlar. Her adım, onay ve durum geçişi yerel SQLite veritabanında denetlenebilir biçimde kayıt altına alınır.
 
@@ -54,7 +57,8 @@ cp providers.example.yaml .system/providers.yaml
 # 3. Web panelini derleyin
 cd ui && npm install && npm run build && cd ..
 
-# 4. Sunucuyu başlatın (veya launchd servisi olarak kurun)
+# 4. Kurulumu denetleyin, sonra sunucuyu başlatın (veya launchd servisi olarak kurun)
+.venv/bin/python -m app doctor   # python, providers.yaml, CLI'lar, panel — sağlayıcı çağrısı yok
 .venv/bin/python -m app serve
 # Otomatik başlatma için (macOS): deploy/launchd.sh install
 

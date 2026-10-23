@@ -9,6 +9,7 @@ from starlette.testclient import TestClient
 from app.api import create_app
 from app import store, runner_store as repo
 from tests.test_runner import Fake
+import tests.fakebin  # noqa: F401  (provider CLIs are stubs, not whatever is installed)
 
 
 class SessionApiTests(unittest.TestCase):

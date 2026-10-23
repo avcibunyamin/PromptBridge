@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-10-23
+
+### Added
+- Continuous integration (GitHub Actions): backend tests on macOS and Linux, UI tests and build on Linux, and a check that the committed panel in `app/static/` matches a fresh build. Read-only permissions; actions pinned to commit SHAs.
+
+### Fixed
+- Tests no longer depend on the provider CLIs installed on the machine (they use stub executables), so they pass on a clean machine.
+- Tests that start a real local HTTP server skip, with a reason, where loopback HTTP does not answer.
+
+### Changed
+- Documentation: Node.js 22.6+ is needed to run the UI tests or rebuild the panel; CI badge; contributor notes about CI.
+
 ## [0.3.4] - 2026-10-23
 
 ### Changed
@@ -69,7 +81,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Safety: loopback-only server, cross-site guard on every mutating endpoint, prompts never passed through a shell, read-only reviewers, git hook/config change reporting.
 - Turkish and English user guides, MIT license.
 
-[Unreleased]: https://github.com/avcibunyamin/PromptBridge/compare/v0.3.4...HEAD
+[Unreleased]: https://github.com/avcibunyamin/PromptBridge/compare/v0.3.5...HEAD
+[0.3.5]: https://github.com/avcibunyamin/PromptBridge/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/avcibunyamin/PromptBridge/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/avcibunyamin/PromptBridge/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/avcibunyamin/PromptBridge/compare/v0.3.1...v0.3.2

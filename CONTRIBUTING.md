@@ -21,9 +21,10 @@ PromptBridge projesine dışarıdan katkıda bulunmak için lütfen aşağıdaki
      cd ui && npm test && npm run build
      ```
      *(Depo kökünden çalıştırmak için: `cd ai-orchestrator/ui && npm test && npm run build`)*
-3. **Pull Request:** Değişikliklerinizi `main` dalına yönelik küçük ve tek bir amaca odaklanmış bir Pull Request (PR) olarak açın.
-4. **Kod Dili:** Tüm kodlar, fonksiyon/değişken adları, yorumlar ve commit mesajları İngilizce olmalıdır.
-5. **Güvenlik Açıkları:** Güvenlik açıklarını kesinlikle herkese açık GitHub Issues veya PR üzerinden bildirmeyin; sorumlu bildirim adımları için [SECURITY.md](SECURITY.md) belgesine bakın.
+3. **CI:** Pull Request'ler macOS ve Linux'ta otomatik test edilir; `ai-orchestrator/app/static/` içindeki derlenmiş panel temiz bir `npm run build` çıktısıyla aynı olmalıdır, arayüzü değiştirdiyseniz derleme çıktısını da commit edin.
+4. **Pull Request:** Değişikliklerinizi `main` dalına yönelik küçük ve tek bir amaca odaklanmış bir Pull Request (PR) olarak açın.
+5. **Kod Dili:** Tüm kodlar, fonksiyon/değişken adları, yorumlar ve commit mesajları İngilizce olmalıdır.
+6. **Güvenlik Açıkları:** Güvenlik açıklarını kesinlikle herkese açık GitHub Issues veya PR üzerinden bildirmeyin; sorumlu bildirim adımları için [SECURITY.md](SECURITY.md) belgesine bakın.
 
 ---
 
@@ -36,7 +37,7 @@ python3.12 -m venv .venv
 mkdir -p .system && cp providers.example.yaml .system/providers.yaml
 
 cd ui
-npm install
+npm ci
 npm run build
 cd ..
 ```
@@ -120,9 +121,10 @@ If you are an external contributor, please follow this workflow:
      cd ui && npm test && npm run build
      ```
      *(or from the repository root: `cd ai-orchestrator/ui && npm test && npm run build`)*
-3. **Pull Request:** Open a pull request against the `main` branch. Keep pull requests small and focused on a single change or fix.
-4. **Code, Comments, and Commit Messages:** All source code, identifiers, comments, and commit messages must be written in English.
-5. **Security Vulnerabilities:** Do **not** report security vulnerabilities as public GitHub issues or PRs. Please refer to [SECURITY.md](SECURITY.md) for private disclosure instructions.
+3. **CI:** Pull requests are tested automatically on macOS and Linux; the built panel in `ai-orchestrator/app/static/` must match a fresh `npm run build`, so commit the build output when you change the UI.
+4. **Pull Request:** Open a pull request against the `main` branch. Keep pull requests small and focused on a single change or fix.
+5. **Code, Comments, and Commit Messages:** All source code, identifiers, comments, and commit messages must be written in English.
+6. **Security Vulnerabilities:** Do **not** report security vulnerabilities as public GitHub issues or PRs. Please refer to [SECURITY.md](SECURITY.md) for private disclosure instructions.
 
 ### Running Tests
 

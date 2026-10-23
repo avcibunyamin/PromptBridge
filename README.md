@@ -1,5 +1,7 @@
 **English** · [Türkçe](README.tr.md)
 
+[![CI](https://github.com/avcibunyamin/PromptBridge/actions/workflows/ci.yml/badge.svg)](https://github.com/avcibunyamin/PromptBridge/actions/workflows/ci.yml)
+
 # PromptBridge
 
 **PromptBridge — a supervised AI coding team on your own machine.**
@@ -18,7 +20,7 @@
 ## Requirements
 
 - **OS:** macOS (primary). Linux: server and panel only — see [Platform support](#platform-support).
-- **Python 3.12+** and **Node.js 18+** (only to rebuild the panel) (on macOS: `brew install python@3.12 node`).
+- **Python 3.12+** and **Node.js 22.6+** (only to rebuild the panel or run the UI tests) (on macOS: `brew install python@3.12 node`).
 - **At least one provider CLI:** Claude Code (`claude`), Antigravity (`agy`), Codex (`codex`) or Ollama (`ollama`).
 - Optional: `gh` (GitHub clone / draft PR), `tailscale` (phone access), Xcode Command Line Tools (Mac app).
 

@@ -11,6 +11,7 @@ from starlette.testclient import TestClient
 
 from app import preview, store
 from app.api import create_app
+from tests import netcheck
 
 
 class PreviewCoreTests(unittest.TestCase):
@@ -124,6 +125,7 @@ class PreviewApiTests(unittest.TestCase):
             HTTPServer(('127.0.0.1', int(os.environ['PORT'])), Handler).serve_forever()
         """))
 
+    @unittest.skipUnless(netcheck.loopback_http_ok(), netcheck.SKIP_REASON)
     def test_approve_start_status_stop_e2e(self):
         self._write_server("preview-ok")
         with TestClient(self.app) as client:
@@ -151,6 +153,7 @@ class PreviewApiTests(unittest.TestCase):
             self.assertEqual(stopped.status_code, 200)
             self.assertEqual(stopped.json()["server"]["status"], "stopped")
 
+    @unittest.skipUnless(netcheck.loopback_http_ok(), netcheck.SKIP_REASON)
     def test_fallback_port_stays_stable_across_approve_status_and_start(self):
         self._write_server("fallback-port")
         chosen_port = preview.free_port()

@@ -20,6 +20,7 @@ from app.adapters.base import AdapterResult
 from app.api import create_app
 from app.provider_policy import normalize, digest, DEFAULT
 from app.runner import SessionRunner
+import tests.fakebin  # noqa: F401  (provider CLIs are stubs, not whatever is installed)
 
 NEW_TABLES = ('works', 'work_messages', 'work_runs', 'work_events', 'work_resume_refs')
 

@@ -28,7 +28,7 @@
 ### Prerequisites
 
 - **Python 3.12+**
-- **Node.js 18+** and **npm**
+- **Node.js 22.6+** and **npm** (only to rebuild the panel or run the UI tests)
 - At least one supported provider CLI tool (`claude`, `agy`, `codex`, or `ollama`)
 
 ### Step 1: Python Virtual Environment (`venv`) and Dependencies

@@ -15,6 +15,7 @@ from app.provider_policy import DEFAULT, normalize, digest
 from app.runner import SessionRunner
 from app.api import create_app
 from starlette.testclient import TestClient
+import tests.fakebin  # noqa: F401  (provider CLIs are stubs, not whatever is installed)
 
 
 class MigrationTests(unittest.TestCase):

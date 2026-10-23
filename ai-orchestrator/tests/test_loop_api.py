@@ -11,6 +11,7 @@ from starlette.testclient import TestClient
 from app import store, loop_store as loop
 from app.api import create_app
 from tests.test_loop_runner import Script, review
+import tests.fakebin  # noqa: F401  (provider CLIs are stubs, not whatever is installed)
 
 
 class LoopApi(unittest.TestCase):

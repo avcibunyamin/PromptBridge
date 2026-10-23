@@ -16,6 +16,7 @@ from app import catalog, provider_auth, store, works_store as ws
 from app.adapters.base import AdapterResult
 from app.api import create_app
 from app.provider_policy import DEFAULT, digest, effective, load_config, load_policy, normalize, team_problems
+import tests.fakebin  # noqa: F401  (provider CLIs are stubs, not whatever is installed)
 
 V2_DEFAULT_DIGEST = '60a36e1cdf6fb4ae030ea2eac2558be778a6709ea2447c7b36fdfb5e2b3ef8b9'   # pre-F3-03 main
 V3_LOOP_DIGEST = '72e4b0ced27930f1eb3714328e3ead38c60123fa1e3cc2077fa2adb7dc2b24fe'

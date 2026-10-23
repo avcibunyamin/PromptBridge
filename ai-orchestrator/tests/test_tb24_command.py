@@ -10,6 +10,7 @@ from tests.test_f303_team import FakeProviders
 from tests import test_tb12b_interrupt as tb12b
 from tests.test_tb12b_interrupt import HOST, LOGIN
 from app import mobile
+import tests.fakebin  # noqa: F401  (provider CLIs are stubs, not whatever is installed)
 
 COMMAND = (('POST', '/api/works'), ('POST', '/api/works/w-missing/messages'),
            ('GET', '/api/sessions/providers/preview'), ('GET', '/api/settings'), ('PUT', '/api/settings'))

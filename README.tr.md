@@ -1,5 +1,7 @@
 [English](README.md) · **Türkçe**
 
+[![CI](https://github.com/avcibunyamin/PromptBridge/actions/workflows/ci.yml/badge.svg)](https://github.com/avcibunyamin/PromptBridge/actions/workflows/ci.yml)
+
 # PromptBridge (Conductor)
 
 ![PromptBridge panelinde bir çalışma: yazar (Codex) yazar, bağımsız salt okur inceleyici (Claude) denetler, yazar düzeltir](docs/images/panel-work.png)
@@ -28,7 +30,7 @@ Bir model kodu yazar (yazma yetkili profil), bağımsız bir model ise salt okun
 
 - **İşletim Sistemi:** macOS (launchd, Keychain, `sandbox-exec` ve SwiftUI Mac uygulaması için önerilir) veya Linux (temel sunucu ve web paneli)
 - **Python:** Python 3.12+
-- **Node.js:** Node.js 18+ ve `npm` (yalnız paneli yeniden derlemek için)
+- **Node.js:** Node.js 22.6+ ve `npm` (yalnız paneli yeniden derlemek ya da arayüz testlerini çalıştırmak için)
 - **Sağlayıcı CLI Araçları (en az biri):**
   - **Claude Code** (`claude` CLI — kendi Claude aboneliğinizle giriş yapılmış)
   - **Antigravity CLI** (`agy` — Google hesabınızla Gemini / Claude modelleri)

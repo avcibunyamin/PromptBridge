@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from fastapi.testclient import TestClient
 from app import preview, user_settings
 from app.api import create_app
+from tests import netcheck
 
 HAS_SANDBOX = os.path.exists(preview.SANDBOX_EXEC)
 
@@ -57,6 +58,7 @@ class Setting(unittest.TestCase):
 
 
 @unittest.skipUnless(HAS_SANDBOX, 'sandbox-exec not available')
+@unittest.skipUnless(netcheck.loopback_http_ok(), netcheck.SKIP_REASON)
 class RealPreview(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory(); self.addCleanup(tmp.cleanup)

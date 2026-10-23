@@ -28,7 +28,7 @@
 ### Ön Koşullar
 
 - **Python 3.12+**
-- **Node.js 18+** ve **npm**
+- **Node.js 22.6+** ve **npm** (yalnız paneli yeniden derlemek ya da arayüz testlerini çalıştırmak için)
 - En az bir desteklenen sağlayıcı CLI aracı (`claude`, `agy`, `codex` veya `ollama`)
 
 ### Adım 1: Python Sanal Ortamı (`venv`) ve Bağımlılıklar

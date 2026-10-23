@@ -4,9 +4,10 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { EN, TR, fill, lang, locale, say, sayIn, t, type Key } from '../src/i18n/index.ts'
+import { EN, TR, fill, lang, locale, say, sayIn, t, withDetail, type Key } from '../src/i18n/index.ts'
 import { ApiError } from '../src/api.ts'
 import * as bridge from '../src/i18n/bridge.ts'
+import * as errors from '../src/i18n/errors.ts'
 import * as session from '../src/i18n/session.ts'
 import * as settings from '../src/i18n/settings.ts'
 import * as shared from '../src/i18n/shared.ts'
@@ -43,7 +44,16 @@ test('fill replaces placeholders and say falls back to String(e) for unknown cod
   assert.equal(sayIn('settings.', new ApiError('Bad request', 400, 'UNKNOWN_CODE')), 'Error: Bad request')
 })
 
-test('no translation key is shared across the 7 domain modules', () => {
+test('withDetail appends message detail only to translations ending with a colon', () => {
+  const e = new ApiError('Ana klasörde kaydedilmemiş değişiklik var: a.py, b.py', 409, 'X')
+  assert.equal(withDetail('Kaydedilmemiş değişiklik var:', e.message), 'Kaydedilmemiş değişiklik var: a.py, b.py')
+  assert.equal(withDetail('Kaydedilmemiş değişiklik var', e.message), 'Kaydedilmemiş değişiklik var')
+  assert.equal(withDetail('Değişiklik var:', 'Detay yok'), 'Değişiklik var:')
+  assert.equal(withDetail('Değişiklik var:', 'Boş detay:   '), 'Değişiklik var:')
+  assert.equal(say(new ApiError('Nothing: x', 409, 'nothing')), t('err.nothing'))
+})
+
+test('no translation key is shared across the 8 domain modules', () => {
   const modules: [string, Record<string, string>][] = [
     ['shell', shell.tr],
     ['shared', shared.tr],
@@ -52,6 +62,7 @@ test('no translation key is shared across the 7 domain modules', () => {
     ['tools', tools.tr],
     ['bridge', bridge.tr],
     ['settings', settings.tr],
+    ['errors', errors.tr],
   ]
   const seen = new Map<string, string>()
   const duplicates: string[] = []
@@ -127,4 +138,10 @@ test('no unexpected Turkish characters in ui/src outside src/i18n/', () => {
   }
 
   assert.deepEqual(offending, [], `Found Turkish characters outside src/i18n/ not on allowlist:\n${offending.join('\n')}`)
+})
+
+test('English values contain no Turkish letters (except the language name itself)', () => {
+  const allowed = new Set<Key>(['settings.lang.tr'])
+  const bad = (Object.keys(EN) as Key[]).filter(k => !allowed.has(k) && /[çğıöşüÇĞİÖŞÜ]/.test(EN[k]))
+  assert.deepEqual(bad, [], `untranslated English values: ${bad.join(', ')}`)
 })

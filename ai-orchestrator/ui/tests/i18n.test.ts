@@ -145,3 +145,8 @@ test('English values contain no Turkish letters (except the language name itself
   const bad = (Object.keys(EN) as Key[]).filter(k => !allowed.has(k) && /[çğıöşüÇĞİÖŞÜ]/.test(EN[k]))
   assert.deepEqual(bad, [], `untranslated English values: ${bad.join(', ')}`)
 })
+
+test('no internal decision or task codes in user-facing text', () => {
+  const bad = (Object.keys(TR) as Key[]).filter(k => /\b(K|TB)-\d{2,3}\b/.test(TR[k]) || /\b(K|TB)-\d{2,3}\b/.test(EN[k]))
+  assert.deepEqual(bad, [], `internal codes in: ${bad.join(', ')}`)
+})

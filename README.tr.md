@@ -28,7 +28,7 @@ Bir model kodu yazar (yazma yetkili profil), bağımsız bir model ise salt okun
 
 - **İşletim Sistemi:** macOS (launchd, Keychain, `sandbox-exec` ve SwiftUI Mac uygulaması için önerilir) veya Linux (temel sunucu ve web paneli)
 - **Python:** Python 3.12+
-- **Node.js:** Node.js 18+ ve `npm` (React/TypeScript panelini derlemek için)
+- **Node.js:** Node.js 18+ ve `npm` (yalnız paneli yeniden derlemek için)
 - **Sağlayıcı CLI Araçları (en az biri):**
   - **Claude Code** (`claude` CLI — kendi Claude aboneliğinizle giriş yapılmış)
   - **Antigravity CLI** (`agy` — Google hesabınızla Gemini / Claude modelleri)
@@ -54,8 +54,7 @@ mkdir -p .system
 cp providers.example.yaml .system/providers.yaml
 # Varsayılan zincir codex ve claude ister; yalnız birini kurduysanız .system/providers.yaml içindeki roles listelerinden kurulu olmayanı silin.
 
-# 3. Web panelini derleyin
-cd ui && npm install && npm run build && cd ..
+# 3. Panel hazır gelir (app/static/); yalnız arayüzü değiştirirseniz yeniden derleyin: cd ui && npm install && npm run build && cd ..
 
 # 4. Kurulumu denetleyin, sonra sunucuyu başlatın (veya launchd servisi olarak kurun)
 .venv/bin/python -m app doctor   # python, providers.yaml, CLI'lar, panel — sağlayıcı çağrısı yok
@@ -74,6 +73,15 @@ Tarayıcıdan yönetim panelini açın: **<http://127.0.0.1:8765/ui/>**
 cd ../apps/mac  # ai-orchestrator içindeyseniz
 make install
 ```
+
+---
+
+## İlk çalışmanız
+
+1. **Genel Bakış** ekranında **Yeni çalışma** düğmesine tıklayın.
+2. Proje klasörünü seçin (git deposuysa **Ayrı kopyada çalış** kutusunu işaretleyin).
+3. Görevi yazın ve takımı onaylayın.
+4. Yazar, inceleyici ve düzeltme adımları **Çalışmalar** ekranında akar; bittiğinde ayrı kopya için **Ana klasöre getir** düğmesine tıklayın.
 
 ---
 

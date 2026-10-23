@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-10-23
+
+### Changed
+- README and user guides: the built panel ships in `app/static/` (Node.js is needed only to rebuild it); a "Your first work" section; `python -m app doctor` and the interface language are documented.
+- One English label for "Bring to main folder"; internal decision codes removed from interface texts (with a test).
+
 ## [0.3.3] - 2026-10-23
 
 ### Added
@@ -63,7 +69,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Safety: loopback-only server, cross-site guard on every mutating endpoint, prompts never passed through a shell, read-only reviewers, git hook/config change reporting.
 - Turkish and English user guides, MIT license.
 
-[Unreleased]: https://github.com/avcibunyamin/PromptBridge/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/avcibunyamin/PromptBridge/compare/v0.3.4...HEAD
+[0.3.4]: https://github.com/avcibunyamin/PromptBridge/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/avcibunyamin/PromptBridge/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/avcibunyamin/PromptBridge/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/avcibunyamin/PromptBridge/compare/v0.3.0...v0.3.1

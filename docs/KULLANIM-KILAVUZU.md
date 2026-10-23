@@ -41,9 +41,9 @@ python3.12 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 ```
 
-### Adım 2: Web Panelini Derleme (`npm run build`)
+### Adım 2: Web Panelini Derleme (`npm run build`) (isteğe bağlı)
 
-React + TypeScript + Vite tabanlı web panelini derleyin. Derleme çıktısı doğrudan FastAPI sunucusunun sunduğu `ai-orchestrator/app/static/` klasörüne yazılır:
+Derlenmiş bir panel `ai-orchestrator/app/static/` içinde hazır gelir; yalnızca arayüzü değiştirdikten sonra yeniden derleyin. React + TypeScript + Vite tabanlı web panelini derleyin. Derleme çıktısı doğrudan FastAPI sunucusunun sunduğu `ai-orchestrator/app/static/` klasörüne yazılır:
 
 ```sh
 cd ui
@@ -60,6 +60,16 @@ cd ..
 mkdir -p .system
 cp providers.example.yaml .system/providers.yaml
 ```
+
+### Kurulumu denetleyin
+
+Sunucuyu başlatmadan önce şunu çalıştırın:
+
+```sh
+.venv/bin/python -m app doctor
+```
+
+Bu komut Python'u, `.system/providers.yaml` dosyasını, sağlayıcı CLI'lerini, derlenmiş paneli, Node'u ve yerel sunucuyu denetler. Hiçbir sağlayıcıyı çağırmaz. Düzeltilmesi gereken bir şey varsa çıkış kodu 1 olur. Oturum girişi yine panelde denetlenir (**Ayarlar → Hesaplar → Oturum durumunu kontrol et**).
 
 ### Adım 4: Sunucuyu Başlatma ve `launchd` Servisi (macOS)
 
@@ -81,6 +91,10 @@ deploy/launchd.sh uninstall    # Servisi durdurur ve plist dosyasını kaldırı
 > **Not:** `launchd` ajanı kuruluyken `kill` komutu sunucuyu kalıcı olarak durdurmaz; `launchd` en fazla 30 saniye içinde süreci yeniden başlatır. Sunucuyu durdurmak için `deploy/launchd.sh uninstall` komutunu kullanın. Günlükler `~/Library/Logs/Conductor/server-launchd.log` dosyasına yazılır.
 
 Sunucu çalıştığında yönetim paneli şu adrestedir: **<http://127.0.0.1:8765/ui/>**
+
+### Arayüz dili
+
+Panel Türkçe ve İngilizce kullanılabilir. Dili **Ayarlar → Görünüm** altından seçin; seçim her cihazda ayrı kaydedilir. Kayıtlı bir seçim yoksa panel tarayıcı dilini izler: tarayıcı dili `tr` ise Türkçe, aksi hâlde İngilizce açılır. Dili değiştirdiğinizde sayfa yeniden yüklenir.
 
 ---
 
@@ -373,6 +387,7 @@ PromptBridge, yerel makinenizde yapay zeka ajanlarını çalıştırırken çok 
 
 | Belirti / Hata | Neden ve Çözüm |
 |---|---|
+| **Önce `python -m app doctor` çalıştırın** | `ai-orchestrator/` içinde `.venv/bin/python -m app doctor` çalıştırın. Python'u, `.system/providers.yaml` dosyasını, sağlayıcı CLI'lerini, derlenmiş paneli, Node'u ve yerel sunucuyu hiçbir sağlayıcıyı çağırmadan denetler; düzeltilmesi gereken bir şey varsa çıkış kodu 1 olur. Oturum girişi panelde denetlenir (**Ayarlar → Hesaplar → Oturum durumunu kontrol et**). |
 | **Panel açılmıyor (`127.0.0.1:8765` yanıt vermiyor)** | Sunucu çalışmıyor. `deploy/launchd.sh status` ile kontrol edin veya `.venv/bin/python -m app serve` ile başlatın. |
 | **`install`: "port 8765 is in use by another process"** | Elle başlatılmış bir `serve` süreci portu tutuyor. `lsof -nP -iTCP:8765 -sTCP:LISTEN` ile PID'yi bulup `kill -TERM <PID>` ile durdurun, ardından `deploy/launchd.sh install` çalıştırın. |
 | **`kill` komutuyla kapattığım sunucu geri geliyor** | `launchd` ajanı `KeepAlive` kullanır. Sunucuyu durdurmak için `deploy/launchd.sh uninstall` komutunu çalıştırın. |

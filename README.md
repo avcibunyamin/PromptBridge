@@ -18,7 +18,7 @@
 ## Requirements
 
 - **OS:** macOS (primary). Linux: server and panel only — see [Platform support](#platform-support).
-- **Python 3.12+** and **Node.js 18+** (on macOS: `brew install python@3.12 node`).
+- **Python 3.12+** and **Node.js 18+** (only to rebuild the panel) (on macOS: `brew install python@3.12 node`).
 - **At least one provider CLI:** Claude Code (`claude`), Antigravity (`agy`), Codex (`codex`) or Ollama (`ollama`).
 - Optional: `gh` (GitHub clone / draft PR), `tailscale` (phone access), Xcode Command Line Tools (Mac app).
 
@@ -44,10 +44,7 @@ All commands after step 1 run inside `ai-orchestrator/`.
    cp providers.example.yaml .system/providers.yaml      # default chain (codex + claude)
    # or: providers.claude-only.yaml / providers.codex-only.yaml / providers.ollama-local.yaml
    ```
-4. **Build the panel:**
-   ```sh
-   cd ui && npm install && npm run build && cd ..
-   ```
+4. **Panel:** a built panel ships in `app/static/`; rebuild it only if you change the UI: `cd ui && npm install && npm run build && cd ..`
 5. **Sign in providers** (only the ones you use):
    - **Claude Code:** run `claude` and use `/login`.
    - **Codex:** `CODEX_HOME="$PWD/.system/codex-home" codex login`
@@ -65,6 +62,15 @@ Optional native Mac app: `cd ../apps/mac && make install` (see [apps/mac/README.
 
 ---
 
+## Your first work
+
+1. In **Overview**, click **New work**.
+2. Pick your project folder (if it is a git repository, check **Work in a separate copy**).
+3. Write the task and confirm the team (**Send**).
+4. Author, reviewer, and fix steps stream in **Works**; when finished in a separate copy, click **Bring to main folder**.
+
+---
+
 ## How it works
 
 1. You pick a project folder and a team (author + reviewer) and write the task.
@@ -73,7 +79,7 @@ Optional native Mac app: `cd ../apps/mac && make install` (see [apps/mac/README.
 4. A **different, independent reviewer** model inspects the diff with **read-only** tools and reports findings.
 5. The author addresses the findings; you accept the result when you are satisfied.
 
-For first runs, an **isolated copy** (separate git worktree) is recommended: your source folder is not touched until you click **Bring to source folder**.
+For first runs, an **isolated copy** (separate git worktree) is recommended: your main folder is not touched until you click **Bring to main folder**.
 
 ---
 

@@ -41,9 +41,9 @@ python3.12 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 ```
 
-### Step 2: Build the Web Panel (`npm run build`)
+### Step 2: Build the Web Panel (`npm run build`) (optional)
 
-Build the React + TypeScript + Vite web panel. The build output is written directly to `ai-orchestrator/app/static/`, which is served by FastAPI:
+A built panel ships in `ai-orchestrator/app/static/`; rebuild it only after changing the UI. Build the React + TypeScript + Vite web panel. The build output is written directly to `ai-orchestrator/app/static/`, which is served by FastAPI:
 
 ```sh
 cd ui
@@ -60,6 +60,16 @@ Copy the example policy template to `.system/providers.yaml`:
 mkdir -p .system
 cp providers.example.yaml .system/providers.yaml
 ```
+
+### Check the setup
+
+Before starting the server, run:
+
+```sh
+.venv/bin/python -m app doctor
+```
+
+It checks Python, `.system/providers.yaml`, the provider CLIs, the built panel, Node and the local server. It never calls a provider. The exit code is 1 if something must be fixed. Sign-in is still checked in the panel (**Settings → Accounts → Check session status**).
 
 ### Step 4: Start the Server and Install the `launchd` Agent (macOS)
 
@@ -81,6 +91,10 @@ deploy/launchd.sh uninstall    # Stops the service and removes the plist file
 > **Note:** While the `launchd` agent is installed, running `kill` will not permanently stop the server—`launchd` will restart it within 30 seconds. Always use `deploy/launchd.sh uninstall` to stop the server. Logs are written to `~/Library/Logs/Conductor/server-launchd.log`.
 
 Once running, open the management panel at: **<http://127.0.0.1:8765/ui/>**
+
+### Interface language
+
+The panel is available in Turkish and English. Choose the language under **Settings → Appearance**; the choice is saved on each device separately. Without a saved choice, the panel follows the browser language: Turkish if the browser language is `tr`, English otherwise. The page reloads when you change the language.
 
 ---
 
@@ -372,6 +386,7 @@ PromptBridge enforces strict local security boundaries when orchestrating AI cod
 
 | Symptom / Error | Cause & Solution |
 |---|---|
+| **Run `python -m app doctor` first** | In `ai-orchestrator/`, run `.venv/bin/python -m app doctor`. It checks Python, `.system/providers.yaml`, the provider CLIs, the built panel, Node and the local server without calling a provider; the exit code is 1 if something must be fixed. Sign-in is checked in the panel (**Settings → Accounts → Check session status**). |
 | **Panel does not open (`127.0.0.1:8765` unreachable)** | Server is not running. Check `deploy/launchd.sh status` or run `.venv/bin/python -m app serve`. |
 | **`install`: "port 8765 is in use by another process"** | A manually started `serve` process holds the port. Find its PID via `lsof -nP -iTCP:8765 -sTCP:LISTEN`, stop it with `kill -TERM <PID>`, then run `deploy/launchd.sh install`. |
 | **Server restarts after `kill`** | The `launchd` agent uses `KeepAlive`. Stop it permanently with `deploy/launchd.sh uninstall`. |

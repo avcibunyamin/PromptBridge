@@ -247,7 +247,7 @@ export const en: Record<keyof typeof tr, string> = {
   'tools.iso.branchLabel': 'Branch ',
   'tools.iso.sourceLabel': ' · source ',
   'tools.iso.removed': 'Copy removed.',
-  'tools.iso.apply': 'Bring into main folder',
+  'tools.iso.apply': 'Bring to main folder',
   'tools.iso.nothing': 'No changes in the copy to bring over.',
   'tools.iso.uncommitted': '{count} uncommitted files will be committed to the copy’s branch:',
   'tools.iso.attentionLead': 'Attention:',

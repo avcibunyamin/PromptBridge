@@ -2,6 +2,7 @@
 export const tr = {
   'err.nothing': 'Getirilecek değişiklik yok',
   'err.branch_exists': 'Bu adla bir dal zaten var:',
+  'err.cancel_first': 'Araç izni reddedildi; bu yürütme yeniden denenmez. Önce durdurun, sonra yeni mesaj gönderin.',
   'err.cannot_pause': 'Duraklatılacak bir şey yok (bitti, duraklatıldı ya da zaten istendi)',
   'err.cleanup_failed': 'Önizleme süreci temizlenemedi',
   'err.clone_dir_invalid': 'Klon klasörü kullanılamıyor:',
@@ -59,6 +60,7 @@ export const tr = {
 export const en: Record<keyof typeof tr, string> = {
   'err.nothing': 'Nothing to bring over',
   'err.branch_exists': 'A branch with this name already exists:',
+  'err.cancel_first': 'A tool was denied; this run does not retry. Stop it first, then send a new message.',
   'err.cannot_pause': 'Nothing to pause (finished, paused or already requested)',
   'err.cleanup_failed': 'Could not clean up the preview process',
   'err.clone_dir_invalid': 'Clone folder cannot be used:',

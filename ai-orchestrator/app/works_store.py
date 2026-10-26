@@ -6,6 +6,7 @@ idempotency lookup, sequence assignment and dispatch claim are atomic.
 import base64
 import hashlib
 import json
+import os
 from uuid import uuid4
 from app import runner_store as repo, loop_store, project_instructions
 from app.provider_policy import loop_budget, team_of, kind
@@ -68,21 +69,47 @@ def public_work(work):
                                  'archived_at', 'revision')}
 
 
+def _create_digest(title, workspace_path, isolation):
+    return (_hash({'title': title, 'workspace_path': workspace_path}) if not isolation else
+            _hash({'title': title, 'workspace_path': isolation['isolated_from'], 'isolated': True}))
+
+
+def _replay_existing(row, digest):
+    if row['deleted_at']:
+        raise WorkNotFound('work not found')
+    if row['create_hash'] != digest:
+        raise WorkError('work id already used with a different payload', 'IDEMPOTENCY_CONFLICT')
+    return dict(row), False
+
+
+def _replay_path(row, workspace_path, isolation):
+    """Path for an existing work's digest: the stored path when the request names it, so a replay
+    still matches after the folder was moved or deleted; otherwise the canonical path as before."""
+    stored = row['workspace_path']
+    if isolation:
+        return stored   # the isolated digest is keyed on the source, not on this path
+    raw = os.path.abspath(os.path.expanduser(str(workspace_path)))
+    if stored in (str(workspace_path), raw, os.path.realpath(raw)):
+        return stored
+    return repo.canonical_workspace(workspace_path)
+
+
 def create_work(conn, work_id, title, workspace_path, isolation=None):
     """Idempotent by client id: same payload → same work, different payload → 409.
     TB-26: `isolation` = {'isolated_from': source, 'branch': …}; the work runs in `workspace_path` (the copy), the
-    payload identity is the source (a replay passes the source and never makes a second copy)."""
+    payload identity is the source (a replay passes the source and never makes a second copy).
+    An existing id is compared against its stored path before any canonicalisation, so a replay
+    survives a moved/deleted folder."""
+    existing = conn.execute('SELECT * FROM works WHERE id=?', (work_id,)).fetchone()
+    if existing:
+        return _replay_existing(existing, _create_digest(
+            title, _replay_path(existing, workspace_path, isolation), isolation))
     workspace_path = repo.canonical_workspace(workspace_path)
-    digest = (_hash({'title': title, 'workspace_path': workspace_path}) if not isolation else
-              _hash({'title': title, 'workspace_path': isolation['isolated_from'], 'isolated': True}))
+    digest = _create_digest(title, workspace_path, isolation)
     with transaction(conn):
         row = conn.execute('SELECT * FROM works WHERE id=?', (work_id,)).fetchone()
-        if row:
-            if row['deleted_at']:
-                raise WorkNotFound('work not found')
-            if row['create_hash'] != digest:
-                raise WorkError('work id already used with a different payload', 'IDEMPOTENCY_CONFLICT')
-            return dict(row), False
+        if row:   # inserted concurrently since the lookup above
+            return _replay_existing(row, digest)
         now = _now()
         conn.execute('INSERT INTO works(id,workspace_path,title,create_hash,created_at,updated_at) '
                      'VALUES (?,?,?,?,?,?)', (work_id, workspace_path, title, digest, now, now))
@@ -324,6 +351,9 @@ def delete_work(conn, work_id, expected_revision):
             (now, now, work_id, expected_revision)).rowcount
         if changed != 1:
             raise WorkError('work changed; reload and retry', 'revision_conflict')
+        # Unlike archive, delete does not refuse queued messages: they die with the work, atomically.
+        conn.execute("UPDATE work_messages SET status='CANCELLED' WHERE work_id=? AND status='PENDING'",
+                     (work_id,))
         append_event(conn, work_id, 'work_deleted', {'deleted_at': now})
         return dict(conn.execute('SELECT * FROM works WHERE id=?', (work_id,)).fetchone())
 
@@ -339,6 +369,8 @@ def continue_work(conn, work_id, expected_session_id, expected_outcome=None):
         run = latest_run(conn, work_id)
         if not run or run['session_id'] != expected_session_id:
             raise WorkError('stale session; reload the work', 'stale_session')
+        if run['status'] == 'WAITING_APPROVAL':
+            raise WorkError('a denied tool never retries; cancel the run first', 'cancel_first')
         if run['status'] in WAITING:
             raise WorkError('session is waiting; use its retry first', 'use_retry')
         if run['status'] == 'RECOVERY_REQUIRED':

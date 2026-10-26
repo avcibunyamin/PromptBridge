@@ -325,6 +325,35 @@ class ResumeTests(unittest.IsolatedAsyncioTestCase):
         await SessionRunner(self.db, adapter_factory=self.factory).run_session(s2)
         self.assertEqual(self.decision(s2)['reason'], 'previous_run_not_succeeded')
 
+    async def test_continue_waiting_approval_requires_cancel(self):
+        s1, _ = await self.run_message('one')
+        self.conn.execute("UPDATE sessions SET status='WAITING_APPROVAL' WHERE id=?", (s1,))
+        with self.assertRaises(ws.WorkError) as err:
+            ws.continue_work(self.conn, self.wid, s1)
+        self.assertEqual(err.exception.code, 'cancel_first')
+        self.assertIsNone(ws.get_work(self.conn, self.wid)['continued_session_id'])
+
+    def test_delete_cancels_pending_messages(self):
+        p = self.policy
+        m, _ = ws.add_message(self.conn, self.wid, str(uuid4()), 'queued', digest(p), p, digest(p))
+        ws.delete_work(self.conn, self.wid, ws.get_work(self.conn, self.wid)['revision'])
+        self.assertEqual(rows(self.conn, 'SELECT status FROM work_messages WHERE id=?', m['id'])[0]['status'],
+                         'CANCELLED')
+        self.assertEqual(ws.dispatch_next(self.conn, self.wid), (None, 'work_deleted'))
+
+    def test_create_replay_survives_deleted_folder(self):
+        folder = Path(self.tmp.name) / 'moved_away'; folder.mkdir()
+        wid = str(uuid4())
+        first, created = ws.create_work(self.conn, wid, 'gone', str(folder))
+        self.assertTrue(created)
+        folder.rmdir()
+        again, created = ws.create_work(self.conn, wid, 'gone', str(folder))
+        self.assertFalse(created)
+        self.assertEqual((again['id'], again['workspace_path']), (first['id'], first['workspace_path']))
+        with self.assertRaises(ws.WorkError) as err:
+            ws.create_work(self.conn, wid, 'other title', str(folder))
+        self.assertEqual(err.exception.code, 'IDEMPOTENCY_CONFLICT')
+
     async def test_last_author_claude_blocks_old_codex_seed(self):
         policy = normalize({'roles': {'author': ['codex', 'claude'], 'reviewer': ['claude']}})
         quota = failed('QUOTA_EXCEEDED')

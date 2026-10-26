@@ -178,6 +178,89 @@ class Gateway(unittest.TestCase):
         cross = self.local.delete(f'/api/mobile/devices/{device}', headers={'Origin': 'https://evil.example'})
         self.assertEqual(cross.status_code, 403)                                # device admin keeps mutation_guard
 
+    def raw(self, path, host=HOST):
+        """The guard with a raw ASGI scope: the HTTP client would normalise `..` and `//` before sending.
+        Only for requests the guard refuses itself (the app is never reached here)."""
+        sent = []
+
+        async def receive():
+            return {'type': 'http.request', 'body': b'', 'more_body': False}
+
+        async def send(message):
+            sent.append(message)
+        scope = {'type': 'http', 'method': 'GET', 'path': path, 'query_string': b'', 'headers': [(b'host', host.encode())]}
+        asyncio.run(mobile.MobileGuard(self.app, self.db, HOST)(scope, receive, send))
+        return sent[0]['status'], json.loads(sent[1]['body'])['code']
+
+    def test_dot_segments_backslashes_and_empty_segments_are_404(self):
+        for path in ('/ui/../api/mobile/devices', '/ui/..', '/ui/./index.html', '/assets/../index.html', '/ui/.',
+                     '/ui//index.html', '//ui/', '/ui/x//', '/ui\\..\\api', '/assets/a\\b', '/api/works/../works'):
+            with self.subTest(path=path):
+                self.assertEqual(self.raw(path), (404, 'not_found'))
+        self.assertEqual(self.raw('/ui/../x', host='evil.ts.net'), (421, 'wrong_host'))   # Host is still checked first
+        self.assertEqual(self.gw.get('/ui/').status_code, 200)                  # the trailing '/' stays valid
+
+    def test_refused_requests_count_against_the_device_rate(self):
+        token = self.pair().json()['token']
+        with patch.object(mobile, 'DEVICE_RATE', 3):
+            codes = [self.gw.get('/api/works', headers=self.auth(token, login='other@example.com')).status_code
+                     for _ in range(5)]
+        self.assertEqual(codes, [403, 403, 403, 429, 429])
+        mismatches = self.conn.execute(
+            "SELECT count(*) FROM mobile_audit WHERE outcome='tailscale_user_mismatch'").fetchone()[0]
+        self.assertEqual(mismatches, 3)
+        fresh = self.pair().json()['token']                                     # a fresh device for the cookie case
+        with patch.object(mobile, 'DEVICE_RATE', 3):
+            cookie = [self.gw.get('/api/works', headers=self.auth(fresh, Cookie='a=b')).status_code
+                      for _ in range(4)]
+        self.assertEqual(cookie, [401, 401, 401, 429])                        # a valid token with a cookie counts too
+
+    def test_revocation_between_token_check_and_watch_is_refused(self):
+        token = self.pair().json()['token']
+        device = self.conn.execute('SELECT id FROM mobile_devices').fetchone()[0]
+        real_watch = mobile._watch
+
+        def racing_watch(device_id):                     # revoke() lands after device_for_token(), before the watch
+            c = store.connect(self.db)
+            try:
+                mobile.revoke(c, device_id)
+            finally:
+                c.close()
+            return real_watch(device_id)
+        with patch.object(mobile, '_watch', racing_watch):
+            r = self.gw.get('/api/works', headers=self.auth(token))
+        self.assertEqual((r.status_code, r.json()['code']), (401, 'device_revoked'))
+        self.assertEqual(mobile._streams.get(device, set()), set())             # the watch was removed
+        outcomes = [row[0] for row in self.conn.execute('SELECT outcome FROM mobile_audit WHERE device_id=?', (device,))]
+        self.assertIn('device_revoked', outcomes)
+        self.assertEqual(self.gw.get('/api/events', headers=self.auth(token)).status_code, 401)   # same token later
+
+    def test_audit_row_is_written_when_the_app_raises(self):
+        token = self.pair().json()['token']
+
+        async def boom(scope, receive, send):
+            raise RuntimeError('boom')
+        gw = TestClient(mobile.MobileGuard(boom, self.db, HOST), base_url=f'https://{HOST}', raise_server_exceptions=False)
+        self.assertEqual(gw.post('/api/envelopes/e1/approve', json={}, headers=self.auth(token)).status_code, 500)
+        rows = [tuple(r) for r in self.conn.execute(
+            "SELECT status, outcome FROM mobile_audit WHERE path='/api/envelopes/e1/approve'")]
+        self.assertEqual(rows, [(500, 'forwarded')])
+
+    def test_long_login_is_refused_and_pair_rate_is_per_user(self):
+        r = self.pair(login='a' * 195 + '@x.com')                               # 201 characters
+        self.assertEqual(r.json()['code'], 'tailscale_login_too_long')
+        self.assertEqual(self.conn.execute('SELECT count(*) FROM mobile_devices').fetchone()[0], 0)   # not cut and stored
+        code = self.local.post('/api/mobile/pairing').json()['code']
+        wrong = '000000' if code != '000000' else '111111'
+
+        def attempt(login):
+            return self.gw.post('/api/mobile/pair', json={'code': wrong}, headers={'Tailscale-User-Login': login}).status_code
+        with patch.object(mobile, 'PAIR_RATE', 2):
+            first = [attempt('a@example.com') for _ in range(3)]
+            other = attempt('b@example.com')
+        self.assertEqual(first, [403, 403, 429])
+        self.assertEqual(other, 403)                                             # not locked out by a@example.com
+
 
 class StreamRevocation(unittest.IsolatedAsyncioTestCase):
     async def test_revoking_a_device_ends_its_open_stream(self):

@@ -42,6 +42,16 @@ class Endpoints(unittest.TestCase):
                     'https://evilpush.apple.com.example/x', 'file:///etc/passwd', 'not a url'):
             self.assertFalse(push.valid_endpoint(url), url)
 
+    def test_bad_ports_are_invalid_not_errors(self):
+        for url in ('https://fcm.googleapis.com:abc/x', 'https://fcm.googleapis.com:70000/x'):
+            self.assertFalse(push.valid_endpoint(url), url)                              # no ValueError escapes
+
+    def test_whitespace_control_backslash_and_non_canonical_are_invalid(self):
+        for url in ('https://fcm.googleapis.com/fcm send/x', ' https://fcm.googleapis.com/x',
+                    'https://fcm.googleapis.com/x ', 'https://fcm.googleapis.com/x\t', 'https://fcm.googleapis.com/x\ny',
+                    'https://fcm.googleapis.com/x\x00', 'https://fcm.googleapis.com\\@evil.example/x',
+                    'https://fcm.googleapis.com/x\\y', 'https://fcm.googleapis.com/x?'):
+            self.assertFalse(push.valid_endpoint(url), repr(url))
 
 class Gateway(unittest.TestCase):
     setUp, scopes = tb12b.Interrupt.setUp, tb12b.Interrupt.scopes
@@ -186,6 +196,24 @@ class Delivery(unittest.TestCase):
             push.notify(self.db, 't', 'b', wait=True)
         send.assert_not_called()
 
+    def test_subscribe_writes_nothing_for_a_revoked_device(self):
+        with store.transaction(self.conn):
+            self.conn.execute("UPDATE mobile_devices SET revoked_at='now'")
+        _, keys, _ = phone_keys()
+        other = 'https://updates.push.services.mozilla.com/wpush/v2/y'
+        self.assertFalse(push.subscribe(self.conn, 'dev_1', other, keys['p256dh'], keys['auth']))
+        self.assertEqual(self.conn.execute("SELECT endpoint FROM push_subscriptions WHERE device_id='dev_1'").fetchone()[0],
+                         FCM)                                                            # the old row is not updated
+        push.unsubscribe(self.conn, 'dev_1')
+        self.assertFalse(push.subscribe(self.conn, 'dev_1', FCM, keys['p256dh'], keys['auth']))
+        self.assertEqual(self.conn.execute('SELECT count(*) FROM push_subscriptions').fetchone()[0], 0)
+
+    def test_subscribe_upserts_for_a_live_device(self):
+        _, keys, _ = phone_keys()
+        other = 'https://updates.push.services.mozilla.com/wpush/v2/y'
+        self.assertTrue(push.subscribe(self.conn, 'dev_1', other, keys['p256dh'], keys['auth']))
+        rows = self.conn.execute("SELECT endpoint FROM push_subscriptions").fetchall()
+        self.assertEqual([r[0] for r in rows], [other])
     def test_an_envelope_waiting_for_approval(self):
         from app.watcher import capture_file
         f = Path(self.db).parent / 'outbox' / 'plan.md'; f.parent.mkdir(); f.write_text('# Plan\nx\n')

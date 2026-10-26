@@ -35,12 +35,18 @@ STATUS_TEXT = {
 
 
 def valid_endpoint(url: str) -> bool:
+    # Whitespace, control characters and backslashes are refused outright: URL parsers disagree on them.
+    if not isinstance(url, str) or any(c.isspace() or ord(c) < 0x20 or ord(c) == 0x7f or c == '\\' for c in url):
+        return False
     try:
         parts = urlsplit(url)
+        port = parts.port   # raises ValueError for a non-numeric or out-of-range port
+        if parts.geturl() != url:   # what is stored is exactly what gets called
+            return False
     except ValueError:
         return False
     host = (parts.hostname or '').lower()
-    return (parts.scheme == 'https' and not parts.username and not parts.password and parts.port in (None, 443)
+    return (parts.scheme == 'https' and not parts.username and not parts.password and port in (None, 443)
             and (host in HOSTS or any(host.endswith(s) for s in HOST_SUFFIXES)))
 
 
@@ -76,13 +82,19 @@ def public_key(db_path) -> str:
     return _b64(_vapid(db_path).public_key.public_bytes(Encoding.X962, PublicFormat.UncompressedPoint))
 
 
-def subscribe(conn, device_id: str, endpoint: str, p256dh: str, auth: str) -> None:
+def subscribe(conn, device_id: str, endpoint: str, p256dh: str, auth: str) -> bool:
+    """Write (or replace) the device's subscription, only while the device is not revoked; whether a row was
+    written. The check sits in the same statement, so a revoke cannot slip in between check and write."""
     from app.store import transaction
     with transaction(conn):
-        conn.execute("INSERT INTO push_subscriptions(device_id, endpoint, p256dh, auth, created_at) VALUES (?,?,?,?,?) "
-                     "ON CONFLICT(device_id) DO UPDATE SET endpoint=excluded.endpoint, p256dh=excluded.p256dh, "
-                     "auth=excluded.auth, created_at=excluded.created_at",
-                     (device_id, endpoint, p256dh, auth, datetime.now(timezone.utc).isoformat()))
+        # The WHERE clause also keeps SQLite from reading ON CONFLICT as a join constraint (upsert parsing rule).
+        cur = conn.execute("INSERT INTO push_subscriptions(device_id, endpoint, p256dh, auth, created_at) "
+                           "SELECT ?,?,?,?,? WHERE EXISTS "
+                           "(SELECT 1 FROM mobile_devices WHERE id=? AND revoked_at IS NULL) "
+                           "ON CONFLICT(device_id) DO UPDATE SET endpoint=excluded.endpoint, p256dh=excluded.p256dh, "
+                           "auth=excluded.auth, created_at=excluded.created_at",
+                           (device_id, endpoint, p256dh, auth, datetime.now(timezone.utc).isoformat(), device_id))
+        return cur.rowcount > 0
 
 
 def unsubscribe(conn, device_id: str) -> None:

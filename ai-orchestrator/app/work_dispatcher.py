@@ -58,24 +58,30 @@ class WorkDispatcher:
             conn.close()
 
     def _try(self, conn, work_id):
+        # One work's failure (including append_event or spawn) must not stop the
+        # remaining works in this dispatch_pass loop.
         try:
-            sid, reason = works_store.dispatch_next(conn, work_id)
-        except repo.WorkspaceBusy:
-            sid, reason = None, 'workspace_busy'
-        except Exception as exc:
-            # Visible, durable and not hot-looped: the message stays PENDING.
-            sid, reason = None, 'dispatch_error:' + type(exc).__name__
-            log.warning('dispatch failed for work %s: %s', work_id, type(exc).__name__)
-        if sid and reason is None:
-            self._last_reason.pop(work_id, None)
-            self._spawn(sid)
-            return
-        if sid and reason == 'rejected':
-            self._last_reason.pop(work_id, None)
-            return
-        if reason not in ('no_pending',) and self._last_reason.get(work_id) != reason:
-            self._last_reason[work_id] = reason
-            works_store.append_event(conn, work_id, 'dispatch_waiting', {'reason': reason})
+            try:
+                sid, reason = works_store.dispatch_next(conn, work_id)
+            except repo.WorkspaceBusy:
+                sid, reason = None, 'workspace_busy'
+            except Exception as exc:
+                # Visible, durable and not hot-looped: the message stays PENDING.
+                sid, reason = None, 'dispatch_error:' + type(exc).__name__
+                log.warning('dispatch failed for work %s: %s', work_id, type(exc).__name__)
+            if sid and reason is None:
+                self._last_reason.pop(work_id, None)
+                self._spawn(sid)
+                return
+            if sid and reason == 'rejected':
+                self._last_reason.pop(work_id, None)
+                return
+            if reason not in ('no_pending',) and self._last_reason.get(work_id) != reason:
+                works_store.append_event(conn, work_id, 'dispatch_waiting', {'reason': reason})
+                # Remember only after the event is stored, so a failed write is retried next pass.
+                self._last_reason[work_id] = reason
+        except Exception:
+            log.exception('dispatch attempt failed for work %s', work_id)
 
     def _spawn(self, sid):
         task = asyncio.get_running_loop().create_task(self.runner.run_session(sid))

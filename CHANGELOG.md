@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.6] - 2026-10-26
+
+### Fixed
+- Queue: a run stopped at a denied tool can no longer be continued (it must be cancelled first, with a clear message); deleting a work cancels its queued messages; repeating a create request returns the existing work before the path is checked again; one work's error no longer stops the dispatcher for the others.
+- Phone gateway: paths with `.`/`..` segments, backslashes or empty segments are refused; the pairing limit is per user; refused requests count against the device rate; a device revoked while a request waits is refused; an audit row is written even when the app raises; over-long login names are refused instead of shortened.
+- Push notifications: endpoints with whitespace, control characters, backslashes, bad ports or a non-canonical form are refused; a revoked device can no longer subscribe.
+
 ## [0.3.5] - 2026-10-23
 
 ### Added

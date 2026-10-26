@@ -126,6 +126,8 @@ def pair(conn, code: str, name: str, tailscale_login: str | None) -> dict:
     """Exchange a valid code for a device token (returned once; only its hash is stored)."""
     if not tailscale_login:
         raise PairingError('tailscale_identity_missing')
+    if len(tailscale_login) > 200:                              # refused, never cut: a cut login could match another
+        raise PairingError('tailscale_login_too_long')
     now = _now()
     refused = result = None
     # One write transaction (BEGIN IMMEDIATE): a code is checked and consumed atomically, so two phones can never
@@ -143,7 +145,7 @@ def pair(conn, code: str, name: str, tailscale_login: str | None) -> dict:
             conn.execute("UPDATE pairing_codes SET used_at=? WHERE id=?", (now.isoformat(), row['id']))
             token = secrets.token_urlsafe(32)                   # 256 bits
             device = {'id': 'dev_' + uuid4().hex[:12], 'name': (name or 'Telefon').strip()[:60] or 'Telefon',
-                      'scopes': ' '.join(DEFAULT_SCOPES), 'tailscale_login': tailscale_login[:200]}
+                      'scopes': ' '.join(DEFAULT_SCOPES), 'tailscale_login': tailscale_login}
             conn.execute("INSERT INTO mobile_devices(id, name, token_hash, scopes, tailscale_login, created_at) "
                          "VALUES (?,?,?,?,?,?)", (device['id'], device['name'], _hash(token), device['scopes'],
                                                    device['tailscale_login'], now.isoformat()))
@@ -261,8 +263,9 @@ class _Limiter:
 
 
 class MobileGuard:
-    """ASGI wrapper for the gateway listener (see module docstring). Order: Host → allow-list → (pairing) →
-    no cookies → token → Tailscale user → scope → forbidden query → rate → trust mark → audit."""
+    """ASGI wrapper for the gateway listener (see module docstring). Order: Host → path shape → allow-list →
+    (pairing) → no cookies → token → rate → Tailscale user → scope → forbidden query → trust mark → revocation
+    re-check → audit (also when the app raises)."""
 
     def __init__(self, app, db_path, host: str):
         self.app, self.db_path, self.host = app, str(db_path), host
@@ -285,6 +288,9 @@ class MobileGuard:
         method, path = scope['method'], scope['path']
         if headers.get(b'host', b'').decode('latin-1').split(':')[0].lower() != self.host:
             return await self._reject(send, 421, 'wrong_host')
+        segments = path.split('/')                               # '/ui/' → ['', 'ui', '']: the trailing '/' stays valid
+        if '\\' in path or any(s in ('.', '..') for s in segments) or '' in segments[1:-1]:
+            return await self._reject(send, 404, 'not_found')    # no dot segments, backslashes or '//' on the gateway
         allowed, needed = _route(method, path)
         if not allowed:
             return await self._reject(send, 404, 'not_found')
@@ -293,15 +299,18 @@ class MobileGuard:
         login = headers.get(LOGIN_HEADER, b'').decode('utf-8', 'replace') or None
         state['conductor_tailscale_login'] = login
         if needed is None:                                       # static panel files and the pairing call
-            if path == '/api/mobile/pair' and not self.limits.allow('pair', PAIR_RATE):
+            # per Tailscale user: one tailnet member cannot lock out another member's pairing
+            if path == '/api/mobile/pair' and not self.limits.allow('pair:' + (login or '-'), PAIR_RATE):
                 return await self._reject(send, 429, 'rate_limited')
             return await self.app(scope, receive, send)
         conn = store.connect(self.db_path)
         try:
             auth = headers.get(b'authorization', b'').decode('latin-1')
             device = device_for_token(conn, auth[7:]) if auth.startswith('Bearer ') and len(auth) > 7 else None
+            if device is not None and not self.limits.allow(device['id'], DEVICE_RATE):   # before every refusal
+                return await self._reject(send, 429, 'rate_limited', conn, device['id'], method, path)
             if b'cookie' in headers or device is None:
-                if not self.limits.allow('anonymous', DEVICE_RATE):   # bounds audit rows from unknown callers
+                if device is None and not self.limits.allow('anonymous', DEVICE_RATE):   # bounds audit rows from unknown callers
                     return await self._reject(send, 429, 'rate_limited')
                 code = 'cookies_not_accepted' if b'cookie' in headers else 'unauthenticated'
                 return await self._reject(send, 401, code, conn, None, method, path)
@@ -312,14 +321,18 @@ class MobileGuard:
             query = parse_qsl(scope.get('query_string', b'').decode('latin-1'), keep_blank_values=True)
             if {k for k, _ in query} & set(_NOT_ON_GATEWAY_QUERY.get(path, ())):
                 return await self._reject(send, 403, 'query_not_allowed', conn, device['id'], method, path)
-            if not self.limits.allow(device['id'], DEVICE_RATE):
-                return await self._reject(send, 429, 'rate_limited', conn, device['id'], method, path)
             with store.transaction(conn):
                 conn.execute("UPDATE mobile_devices SET last_seen_at=? WHERE id=?", (_now().isoformat(), device['id']))
             state[DEVICE_MARK] = device['id']                    # trusted by mutation_guard; never set on 8765
             state['conductor_mobile_scopes'] = device['scopes'].split()
             status = {}
             watch = _watch(device['id'])
+            # revocation race: a revoke() that committed after device_for_token() signalled before this request was
+            # watched, so it is read again now that the watch is registered (a later revoke sets the event)
+            row = conn.execute("SELECT revoked_at FROM mobile_devices WHERE id=?", (device['id'],)).fetchone()
+            if row is None or row['revoked_at'] is not None:
+                _streams[device['id']].discard(watch)
+                return await self._reject(send, 401, 'device_revoked', conn, device['id'], method, path)
             revoked = watch[0]
             inflight = None                                      # the one receive() in progress for this request
 
@@ -354,11 +367,11 @@ class MobileGuard:
                 _streams[device['id']].discard(watch)
                 if inflight is not None:
                     inflight.cancel()
-            if method != 'GET':
-                audit(conn, device['id'], method, path, status.get('code', 0), 'forwarded')
-                if method == 'POST' and 200 <= status.get('code', 0) < 300 and needed == 'command':
-                    kind = 'work' if path == '/api/works' else 'message' if path.endswith('/messages') else None
-                    if kind:
-                        notify_mac(kind)
+                if method != 'GET':                              # written even when the app raised (no status: 500)
+                    audit(conn, device['id'], method, path, status.get('code', 500), 'forwarded')
+            if method == 'POST' and 200 <= status.get('code', 0) < 300 and needed == 'command':
+                kind = 'work' if path == '/api/works' else 'message' if path.endswith('/messages') else None
+                if kind:
+                    notify_mac(kind)
         finally:
             conn.close()

@@ -8,10 +8,13 @@ as accepted (K-026/K1). Through the mobile gateway (K-033, `command` devices) on
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import shutil
 import tempfile
+import threading
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -23,6 +26,7 @@ from app.security import mutation_guard
 DEFAULTS = {'version': 1, 'team': None, 'accepted_digest': None, 'theme': 'system', 'github': {'clone_dir': None},
             'preview': {'sandbox': False}, 'pinned_works': [],
             'work_teams': {}, 'work_waits': {}}   # TB-22 K1: experimental, off by default
+_LOCK = threading.Lock()
 
 
 def path(db_path) -> Path:
@@ -172,42 +176,50 @@ def put_settings(body: Patch, request: Request):
         raise HTTPException(403, {'code': 'mobile_field',
                                   'detail': 'From a phone only the theme, pinned works, work teams and the default team'})
     db_path, config = request.app.state.runner_db, _config(request)
-    data, _ = load(db_path)                      # a broken file is replaced by a valid one on save
-    if 'team' in sent:
-        if body.team is None:
-            data['team'], data['accepted_digest'] = None, None
-        else:
-            team = body.team.model_dump()
-            problems = team_check(config, team)
-            if problems:
-                raise HTTPException(422, {'code': 'team_invalid', 'detail': 'The selected team is not allowed',
-                                          'problems': problems})
-            data['team'], data['accepted_digest'] = team, digest(effective(config, team))
-    if 'theme' in sent and body.theme is not None:
-        data['theme'] = body.theme
-    if 'github' in sent and body.github is not None:
-        clone_dir = body.github.clone_dir
-        if clone_dir:
-            problem = _clone_dir_problem(clone_dir, Path(db_path).resolve().parent.parent)
-            if problem:
-                raise HTTPException(422, {'code': 'clone_dir_invalid', 'detail': problem})
-            clone_dir = str(Path(clone_dir).resolve())
-        data['github'] = {'clone_dir': clone_dir or None}
-    if 'preview' in sent and body.preview is not None:
-        data['preview'] = {'sandbox': body.preview.sandbox}
-    if 'pinned_works' in sent and body.pinned_works is not None:
-        data['pinned_works'] = list(body.pinned_works)
-    if 'work_teams' in sent and body.work_teams is not None:
-        teams = {}
-        for wid, team_model in body.work_teams.items():
-            team = team_model.model_dump()
-            problems = team_check(config, team)
-            if problems:
-                raise HTTPException(422, {'code': 'team_invalid', 'detail': 'The selected team is not allowed',
-                                          'work_id': wid, 'problems': problems})
-            teams[wid] = team
-        data['work_teams'] = teams
-    if 'work_waits' in sent and body.work_waits is not None:
-        data['work_waits'] = {wid: w.model_dump(exclude_none=True) for wid, w in body.work_waits.items()}
-    _write(db_path, data)
+    with _LOCK:
+        data, error = load(db_path)                  # a broken file is backed up and replaced by a valid one on save
+        if 'team' in sent:
+            if body.team is None:
+                data['team'], data['accepted_digest'] = None, None
+            else:
+                team = body.team.model_dump()
+                problems = team_check(config, team)
+                if problems:
+                    raise HTTPException(422, {'code': 'team_invalid', 'detail': 'The selected team is not allowed',
+                                              'problems': problems})
+                data['team'], data['accepted_digest'] = team, digest(effective(config, team))
+        if 'theme' in sent and body.theme is not None:
+            data['theme'] = body.theme
+        if 'github' in sent and body.github is not None:
+            clone_dir = body.github.clone_dir
+            if clone_dir:
+                problem = _clone_dir_problem(clone_dir, Path(db_path).resolve().parent.parent)
+                if problem:
+                    raise HTTPException(422, {'code': 'clone_dir_invalid', 'detail': problem})
+                clone_dir = str(Path(clone_dir).resolve())
+            data['github'] = {'clone_dir': clone_dir or None}
+        if 'preview' in sent and body.preview is not None:
+            data['preview'] = {'sandbox': body.preview.sandbox}
+        if 'pinned_works' in sent and body.pinned_works is not None:
+            data['pinned_works'] = list(body.pinned_works)
+        if 'work_teams' in sent and body.work_teams is not None:
+            teams = {}
+            for wid, team_model in body.work_teams.items():
+                team = team_model.model_dump()
+                problems = team_check(config, team)
+                if problems:
+                    raise HTTPException(422, {'code': 'team_invalid', 'detail': 'The selected team is not allowed',
+                                              'work_id': wid, 'problems': problems})
+                teams[wid] = team
+            data['work_teams'] = teams
+        if 'work_waits' in sent and body.work_waits is not None:
+            data['work_waits'] = {wid: w.model_dump(exclude_none=True) for wid, w in body.work_waits.items()}
+        if error == 'settings_unreadable':
+            target = path(db_path)
+            stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+            try:
+                shutil.copy2(target, target.with_name(f'settings.json.broken-{stamp}'))
+            except FileNotFoundError:
+                pass
+        _write(db_path, data)
     return _for(request, _view(db_path, config))

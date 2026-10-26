@@ -14,9 +14,11 @@ run_watcher(root, db_path, *, observer_class=None, require_ready=False)
 
 from __future__ import annotations
 
-import logging
 import hashlib
+import logging
+import os
 import re
+import stat
 import threading
 import time
 from pathlib import Path
@@ -40,11 +42,13 @@ _SUPPORTED_EXT = {".md"}
 _DEBOUNCE_S = 0.75          # default stability window from G4
 _EMPTY_RETRY_N = 3          # number of retries when file size is 0
 _EMPTY_RETRY_WAIT = 0.10    # seconds between retries
+MAX_ENVELOPE_BYTES = 10 * 1024 * 1024
+_MAX_ARCHIVE_NAME_BYTES = 255
 
 # ── front-matter ───────────────────────────────────────────────────────────────
 
-_FM_RE = re.compile(r"^---\r?\n(.*?)\n---\r?\n", re.DOTALL)
-_KV_RE = re.compile(r'^(\w+)\s*:\s*"?([^"\n]*)"?\s*$', re.MULTILINE)
+_FM_RE = re.compile(r"^---\r?\n(.*?)\r?\n---\r?\n", re.DOTALL)
+_KV_RE = re.compile(r'^(\w+)\s*:\s*"?([^"\r\n]*)"?\s*$', re.MULTILINE)
 
 _ALLOWED_TYPES = {"spec", "prose", "task", "code"}
 
@@ -52,7 +56,7 @@ _ALLOWED_TYPES = {"spec", "prose", "task", "code"}
 def _parse_frontmatter(raw: bytes) -> tuple[dict, bytes]:
     """Return (meta_dict, body_bytes).  meta_dict has only safe, known keys."""
     try:
-        text = raw.decode("utf-8", errors="replace")
+        text = raw.removeprefix(b"\xef\xbb\xbf").decode("utf-8", errors="replace")
     except Exception:
         return {}, raw
 
@@ -77,12 +81,31 @@ def _parse_frontmatter(raw: bytes) -> tuple[dict, bytes]:
 # ── msg-id generator ───────────────────────────────────────────────────────────
 
 def _make_eid() -> str:
-    """msg_YYYYMMDDTHHMMSS_<4 hex chars>"""
-    import os
+    """msg_YYYYMMDDTHHMMSS_<8 hex chars>"""
     from datetime import datetime, timezone
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
-    rnd = os.urandom(2).hex()
+    rnd = os.urandom(4).hex()
     return f"msg_{ts}_{rnd}"
+
+
+def _archive_name(eid: str, filename: str) -> str:
+    candidate = f"{eid}__{filename}"
+    if len(candidate.encode("utf-8")) <= _MAX_ARCHIVE_NAME_BYTES:
+        return candidate
+    suffix = Path(filename).suffix
+    stem = filename[:-len(suffix)] if suffix else filename
+    prefix = f"{eid}__"
+    budget = (
+        _MAX_ARCHIVE_NAME_BYTES
+        - len(prefix.encode("utf-8"))
+        - len(suffix.encode("utf-8"))
+    )
+    if budget <= 0:
+        return (prefix + suffix).encode("utf-8")[:_MAX_ARCHIVE_NAME_BYTES].decode(
+            "utf-8", errors="ignore"
+        )
+    short_stem = stem.encode("utf-8")[:budget].decode("utf-8", errors="ignore")
+    return f"{prefix}{short_stem}{suffix}"
 
 
 # ── duplicate detection ────────────────────────────────────────────────────────
@@ -116,12 +139,40 @@ def capture_file(path: Path, conn, archive_dir: Path | None = None,
 
     # --- read with empty-file retry -------------------------------------------
     raw: bytes | None = None
+    open_flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
     for attempt in range(_EMPTY_RETRY_N):
         try:
-            data = path.read_bytes()
+            fd = os.open(path, open_flags)
         except FileNotFoundError:
             log.warning("capture_file: %s vanished before read", path)
             return None
+        try:
+            st = os.fstat(fd)
+            if not stat.S_ISREG(st.st_mode):
+                raise ValueError(f"capture_file: not a regular file: {path}")
+            if st.st_nlink > 1:
+                raise ValueError(
+                    f"capture_file: hard-linked file refused (st_nlink={st.st_nlink}): {path}"
+                )
+            if st.st_size > MAX_ENVELOPE_BYTES:
+                raise ValueError(
+                    f"capture_file: file size {st.st_size} exceeds {MAX_ENVELOPE_BYTES} bytes: {path}"
+                )
+            chunks: list[bytes] = []
+            remaining = MAX_ENVELOPE_BYTES + 1
+            while remaining > 0:
+                chunk = os.read(fd, min(remaining, 65536))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                remaining -= len(chunk)
+            data = b"".join(chunks)
+            if len(data) > MAX_ENVELOPE_BYTES:
+                raise ValueError(
+                    f"capture_file: file exceeds {MAX_ENVELOPE_BYTES} bytes: {path}"
+                )
+        finally:
+            os.close(fd)
         if data:
             raw = data
             break
@@ -169,7 +220,7 @@ def capture_file(path: Path, conn, archive_dir: Path | None = None,
     if archive_dir is not None:
         archive = Path(archive_dir)
         archive.mkdir(parents=True, exist_ok=True)
-        target = archive / f"{eid}__{path.name}"
+        target = archive / _archive_name(eid, path.name)
         try:
             path.replace(target)
         except FileNotFoundError:
@@ -219,7 +270,7 @@ class _OutboxHandler(FileSystemEventHandler):
             path = path.with_suffix("")
         if path.suffix.lower() not in _SUPPORTED_EXT or path.name.startswith("."):
             return None
-        if path.name.endswith((".tmp", ".part")) or not path.exists():
+        if path.name.endswith((".tmp", ".part")) or not (path.exists() or path.is_symlink()):
             return None
         if self._require_ready and not path.with_name(path.name + ".ready").exists():
             return None
@@ -227,8 +278,8 @@ class _OutboxHandler(FileSystemEventHandler):
 
     @staticmethod
     def _signature(path: Path) -> tuple[int, int]:
-        stat = path.stat()
-        return stat.st_size, stat.st_mtime_ns
+        st = path.lstat()
+        return st.st_size, st.st_mtime_ns
 
     def _schedule(self, src_path: str, *, immediate: bool = False) -> None:
         path = self._candidate(src_path)
@@ -277,7 +328,7 @@ class _OutboxHandler(FileSystemEventHandler):
                         self._on_capture(result[0], 'PENDING_APPROVAL')
                     from app import push   # TB-29: a file waiting for approval reaches the phone
                     push.on_envelope(self._conn(), result[0])
-                elif path.exists() and path.stat().st_size == 0:
+                elif path.exists() and path.lstat().st_size == 0:
                     failed = path.parent / '.failed'
                     failed.mkdir(parents=True, exist_ok=True)
                     path.replace(failed / path.name)
@@ -286,7 +337,7 @@ class _OutboxHandler(FileSystemEventHandler):
                 try:
                     failed = path.parent / '.failed'
                     failed.mkdir(parents=True, exist_ok=True)
-                    if path.exists():
+                    if path.exists() or path.is_symlink():
                         path.replace(failed / path.name)
                 except OSError:
                     log.exception("could not move failed source %s", p)
@@ -308,7 +359,7 @@ class _OutboxHandler(FileSystemEventHandler):
 
     def scan_startup(self, outbox: Path) -> None:
         for path in outbox.iterdir():
-            if path.is_file():
+            if not path.is_dir() or path.is_symlink():
                 self._schedule(str(path))
 
     def dispatch(self, event: FileSystemEvent) -> None:

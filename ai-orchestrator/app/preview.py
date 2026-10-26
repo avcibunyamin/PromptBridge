@@ -17,7 +17,7 @@ import socket
 import sys
 import time
 from typing import Any
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
 from app import store
@@ -397,6 +397,10 @@ async def _ready(url: str, timeout: float = READY_TIMEOUT) -> bool:
             status_code = await asyncio.to_thread(probe)
             if 100 <= status_code < 500:
                 return True
+        except HTTPError as exc:
+            if exc.code < 500:
+                return True
+            await asyncio.sleep(POLL_INTERVAL)
         except (OSError, URLError):
             await asyncio.sleep(POLL_INTERVAL)
     return False

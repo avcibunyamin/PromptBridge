@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import socket
@@ -6,6 +7,7 @@ import tempfile
 import textwrap
 import unittest
 from unittest.mock import patch
+from urllib.error import HTTPError
 
 from starlette.testclient import TestClient
 
@@ -53,6 +55,14 @@ class PreviewCoreTests(unittest.TestCase):
         with patch.dict(os.environ, {**secrets, **kept}, clear=True):
             env = preview.sanitized_env({"PORT": "5000", "HOST": "127.0.0.1"})
         self.assertEqual(env, {**kept, "PORT": "5000", "HOST": "127.0.0.1"})   # nothing else, in particular no secret
+
+    def test_ready_accepts_4xx_http_error_and_waits_on_5xx(self):
+        err_404 = HTTPError("http://127.0.0.1:8000/", 404, "Not Found", None, None)
+        with patch("app.preview.urlopen", side_effect=err_404):
+            self.assertTrue(asyncio.run(preview._ready("http://127.0.0.1:8000/", timeout=0.05)))
+        err_500 = HTTPError("http://127.0.0.1:8000/", 500, "Server Error", None, None)
+        with patch("app.preview.urlopen", side_effect=err_500), patch("app.preview.POLL_INTERVAL", 0.01):
+            self.assertFalse(asyncio.run(preview._ready("http://127.0.0.1:8000/", timeout=0.03)))
 
     def test_migration_adds_preview_tables(self):
         db = self.root / "state.db"

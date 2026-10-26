@@ -245,7 +245,8 @@ def effective(config, team=None):
 def team_problems(config, team):
     """Semantic team validation for the preview and message POST; [] means valid."""
     if not isinstance(team, dict) or set(team) != set(PROFILES):
-        return [{'role': r, 'provider': '', 'reason': 'chain_length'} for r in PROFILES if not isinstance(team, dict) or r not in team]
+        return ([{'role': r, 'provider': '', 'reason': 'chain_length'} for r in PROFILES if not isinstance(team, dict) or r not in team]
+                + [{'role': r, 'provider': '', 'reason': 'unknown_role'} for r in (team if isinstance(team, dict) else ()) if r not in PROFILES])
     allowed, problems = allowed_for(config), []
     for role in PROFILES:
         chain = team[role]

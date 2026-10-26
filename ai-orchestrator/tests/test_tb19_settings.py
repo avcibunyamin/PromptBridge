@@ -4,13 +4,15 @@ import os
 from pathlib import Path
 import stat
 import tempfile
+import threading
+import time
 import unittest
 from unittest.mock import patch
 
 from starlette.testclient import TestClient
 
 from app import user_settings
-from app.provider_policy import digest, effective, load_config
+from app.provider_policy import digest, effective, load_config, team_problems
 
 CEILING = ('roles:\n  author: [claude]\n  reviewer: [claude]\n'
            'allowed:\n  author: [claude, agy@h1]\n  reviewer: [claude, agy@h2/gemini-3.1-pro-high]\n')
@@ -90,11 +92,46 @@ class Settings(unittest.TestCase):
         self.assertEqual([p.name for p in (self.root / '.system').iterdir() if p.name.startswith('.settings-')], [])
 
     def test_broken_file_falls_back_and_a_save_repairs_it(self):
-        self.file.write_text('{not json')
+        self.file.write_bytes(b'{not json')
         body = self.client.get('/api/settings').json()
         self.assertEqual((body['settings'], body['error']), (user_settings.DEFAULTS, 'settings_unreadable'))
         self.assertEqual(self.put({'theme': 'dark'}).status_code, 200)
         self.assertIsNone(self.client.get('/api/settings').json()['error'])
+        backups = list(self.file.parent.glob('settings.json.broken-*'))
+        self.assertEqual(len(backups), 1)
+        self.assertEqual(backups[0].read_bytes(), b'{not json')
+        self.assertEqual(json.loads(self.file.read_text())['theme'], 'dark')
+
+    def test_concurrent_puts_keep_both_fields(self):
+        real_load = user_settings.load
+        def slow_load(db_path):
+            res = real_load(db_path)
+            time.sleep(0.05)
+            return res
+        barrier = threading.Barrier(2)
+        statuses = []
+        def worker(payload):
+            barrier.wait()
+            statuses.append(self.put(payload).status_code)
+        with patch('app.user_settings.load', side_effect=slow_load):
+            t1 = threading.Thread(target=worker, args=({'theme': 'dark'},))
+            t2 = threading.Thread(target=worker, args=({'pinned_works': ['w1']},))
+            t1.start(); t2.start()
+            t1.join(); t2.join()
+        self.assertEqual(statuses, [200, 200])
+        saved = json.loads(self.file.read_text())
+        self.assertEqual((saved['theme'], saved['pinned_works']), ('dark', ['w1']))
+
+    def test_team_problems_rejects_unknown_roles_and_missing_roles(self):
+        cfg = load_config(self.root / '.system/providers.yaml')
+        self.assertEqual(
+            team_problems(cfg, {**TEAM, 'arbiter': ['claude']}),
+            [{'role': 'arbiter', 'provider': '', 'reason': 'unknown_role'}],
+        )
+        self.assertEqual(
+            team_problems(cfg, {'author': TEAM['author']}),
+            [{'role': 'reviewer', 'provider': '', 'reason': 'chain_length'}],
+        )
 
     def test_a_changed_ceiling_reports_problems_and_keeps_the_file(self):
         self.assertEqual(self.put({'team': TEAM}).status_code, 200)

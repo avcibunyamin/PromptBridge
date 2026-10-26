@@ -109,7 +109,7 @@ def _publish_and_complete(conn, envelope: dict, *, actor: str) -> Path:
     dest = Path(dest_path)
     try:
         final = _atomic_write(content, dest)
-        actual_sha = _sha256_file(final)
+        actual_sha = hashlib.sha256(content).hexdigest()
         transition(conn, envelope["id"], Event.DELIVER_OK,
                    expected_state="DELIVERING", actor=actor,
                    payload={"actual_sha256": actual_sha})
@@ -189,9 +189,9 @@ def reconcile(conn, *, inbox_dir: Path, actor: str = "system") -> list[dict]:
 
         dest = Path(dest_path)
         if dest.exists():
-            actual_sha = _sha256_file(dest)
-            expected_sha = store.get_version(conn, env["approved_version_id"])["sha256"]
             try:
+                actual_sha = _sha256_file(dest)
+                expected_sha = store.get_version(conn, env["approved_version_id"])["sha256"]
                 if actual_sha != expected_sha:
                     raise DeliveryConflict(
                         f"destination hash mismatch: expected {expected_sha}, got {actual_sha}")
@@ -202,7 +202,7 @@ def reconcile(conn, *, inbox_dir: Path, actor: str = "system") -> list[dict]:
                 result["sha256"] = actual_sha
                 log.info("reconcile: %s → DELIVERED (%s)", eid, dest.name)
             except Exception as exc:
-                result["action"] = "hash_mismatch"
+                result["action"] = "hash_mismatch" if isinstance(exc, DeliveryConflict) else "error"
                 result["error"] = str(exc)
                 try:
                     transition(conn, eid, Event.DELIVER_ERR,
@@ -210,7 +210,7 @@ def reconcile(conn, *, inbox_dir: Path, actor: str = "system") -> list[dict]:
                                payload={"reason": str(exc)[:200]})
                 except Exception:
                     log.exception("reconcile: could not mark %s FAILED", eid)
-                log.warning("reconcile: %s hash mismatch → FAILED", eid)
+                log.warning("reconcile: %s check failed → FAILED (%s)", eid, exc)
         else:
             try:
                 final = _publish_and_complete(conn, env, actor=actor)

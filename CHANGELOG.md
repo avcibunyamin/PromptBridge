@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.7] - 2026-10-26
+
+### Fixed
+- Envelope outbox: only regular files with a single link and at most 10 MB are captured; symlinks, FIFOs, hard links and oversized files move to `.failed/` instead of being read (a FIFO no longer stalls the watcher). Envelope ids carry more randomness; front matter with a UTF-8 BOM or CRLF line endings is read; very long file names are archived within the 255-byte limit.
+- Delivery: an envelope stays delivered when the receiver takes the file right away; one unreadable file during recovery no longer stops the others.
+- Preview: a server that answers 4xx at its root counts as ready.
+- Settings: simultaneous saves no longer lose each other's changes; a broken settings file is backed up before it is replaced; a team with an unknown role is refused.
+
 ## [0.3.6] - 2026-10-26
 
 ### Fixed

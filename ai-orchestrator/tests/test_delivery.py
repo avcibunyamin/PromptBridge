@@ -5,7 +5,9 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
+from app import delivery as delivery_mod
 from app import store as s
 from app.delivery import deliver, reconcile, _slugify, DeliveryConflict
 from app.transitions import transition, Event
@@ -18,8 +20,8 @@ def _make_db(tmp_dir):
     return conn
 
 
-def _capture_and_approve(conn, content=b"Hello world", title="Test"):
-    eid = "msg_20260101T000000_abcd"
+def _capture_and_approve(conn, content=b"Hello world", title="Test",
+                         eid="msg_20260101T000000_abcd"):
     meta = {
         "id": eid, "schema_version": "1.0",
         "source_agent": "chatgpt", "target_agent": "claude",
@@ -121,6 +123,26 @@ class DeliverTests(unittest.TestCase):
         self.assertEqual(dest.read_bytes(), b"Different existing content")
         self.assertEqual(s.get_envelope(self.conn, eid)["state"], "FAILED")
 
+    def test_deleted_immediately_after_delivery_stays_delivered(self):
+        content = b"Consumed immediately"
+        eid, _ = _capture_and_approve(self.conn, content=content)
+        real_atomic_write = delivery_mod._atomic_write
+
+        def _write_then_delete(data: bytes, dest: Path) -> Path:
+            written = real_atomic_write(data, dest)
+            written.unlink()
+            return written
+
+        with mock.patch("app.delivery._atomic_write", side_effect=_write_then_delete):
+            path = deliver(self.conn, eid, inbox_dir=self.inbox, actor="test")
+
+        self.assertFalse(path.exists())
+        env = s.get_envelope(self.conn, eid)
+        self.assertEqual(env["state"], "DELIVERED")
+        self.assertEqual(
+            env["delivered_sha256"], hashlib.sha256(content).hexdigest()
+        )
+
 
 class ReconcileTests(unittest.TestCase):
     def setUp(self):
@@ -131,8 +153,11 @@ class ReconcileTests(unittest.TestCase):
         self.inbox = Path(self.tmp.name) / "inbox"
         self.inbox.mkdir()
 
-    def _setup_delivering(self, content=b"data", title="Rec"):
-        eid, vid = _capture_and_approve(self.conn, content=content, title=title)
+    def _setup_delivering(self, content=b"data", title="Rec",
+                          eid="msg_20260101T000000_abcd"):
+        eid, vid = _capture_and_approve(
+            self.conn, content=content, title=title, eid=eid
+        )
         # Manually drive to DELIVERING without completing delivery
         from app.delivery import _dest_name
         dest = self.inbox / _dest_name(eid, title)
@@ -163,6 +188,31 @@ class ReconcileTests(unittest.TestCase):
     def test_reconcile_empty_returns_empty_list(self):
         results = reconcile(self.conn, inbox_dir=self.inbox, actor="test")
         self.assertEqual(results, [])
+
+    def test_reconcile_unreadable_target_does_not_block_other_envelopes(self):
+        eid_first, _, dest_first = self._setup_delivering(
+            content=b"first", title="First", eid="msg_20260101T000001_00000001"
+        )
+        eid_bad, _, dest_bad = self._setup_delivering(
+            content=b"bad", title="Bad", eid="msg_20260101T000002_00000002"
+        )
+        eid_last, _, dest_last = self._setup_delivering(
+            content=b"last", title="Last", eid="msg_20260101T000003_00000003"
+        )
+        dest_first.write_bytes(b"first")
+        dest_bad.mkdir()  # dest.exists() is True, but reading raises IsADirectoryError
+
+        results = reconcile(self.conn, inbox_dir=self.inbox, actor="test")
+        by_eid = {r["eid"]: r for r in results}
+
+        self.assertEqual(set(by_eid), {eid_first, eid_bad, eid_last})
+        self.assertIn(by_eid[eid_bad]["action"], ("hash_mismatch", "error"))
+        self.assertEqual(s.get_envelope(self.conn, eid_bad)["state"], "FAILED")
+        self.assertEqual(by_eid[eid_first]["action"], "recovered_delivered")
+        self.assertEqual(s.get_envelope(self.conn, eid_first)["state"], "DELIVERED")
+        self.assertEqual(by_eid[eid_last]["action"], "redelivered")
+        self.assertEqual(s.get_envelope(self.conn, eid_last)["state"], "DELIVERED")
+        self.assertEqual(dest_last.read_bytes(), b"last")
 
 
 if __name__ == "__main__":

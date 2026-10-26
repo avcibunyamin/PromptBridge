@@ -1,5 +1,7 @@
 """G4 tests: watcher capture_file() and Observer integration."""
 
+import os
+import stat
 import tempfile
 import time
 import unittest
@@ -8,7 +10,14 @@ from pathlib import Path
 from watchdog.observers.polling import PollingObserver
 
 from app import store as s
-from app.watcher import capture_file, run_watcher, _parse_frontmatter, _OutboxHandler
+from app.watcher import (
+    MAX_ENVELOPE_BYTES,
+    _OutboxHandler,
+    _make_eid,
+    _parse_frontmatter,
+    capture_file,
+    run_watcher,
+)
 
 
 def _make_db(tmp_dir):
@@ -37,6 +46,21 @@ class ParseFrontmatterTests(unittest.TestCase):
         meta, body = _parse_frontmatter(raw)
         self.assertEqual(meta, {})
         self.assertEqual(body, raw)
+
+    def test_utf8_bom_and_crlf_frontmatter_extracts_title(self):
+        raw = (
+            b'\xef\xbb\xbf---\r\n'
+            b'title: "BOM CRLF Title"\r\n'
+            b'type: spec\r\n'
+            b'note: "CRLF note"\r\n'
+            b'---\r\n'
+            b'Body line\r\n'
+        )
+        meta, body = _parse_frontmatter(raw)
+        self.assertEqual(meta["title"], "BOM CRLF Title")
+        self.assertEqual(meta["type"], "spec")
+        self.assertEqual(meta["note"], "CRLF note")
+        self.assertEqual(body, b"Body line\r\n")
 
 
 class CaptureFileTests(unittest.TestCase):
@@ -114,6 +138,54 @@ class CaptureFileTests(unittest.TestCase):
         self.assertFalse(path.exists())
         self.assertTrue((archive / f"{eid}__archive-me.md").exists())
 
+    def test_make_eid_uses_eight_hex_random_suffix(self):
+        self.assertRegex(_make_eid(), r"^msg_\d{8}T\d{6}_[0-9a-f]{8}$")
+
+    def test_bom_and_crlf_frontmatter_preserves_raw_bytes(self):
+        raw = b'\xef\xbb\xbf---\r\ntitle: "BOM Title"\r\ntype: task\r\n---\r\nBody\r\n'
+        path = self._write("bom.md", raw)
+        eid, vid = capture_file(path, self.conn)
+        env = s.get_envelope(self.conn, eid)
+        self.assertEqual(env["title"], "BOM Title")
+        self.assertEqual(env["type"], "task")
+        self.assertEqual(s.get_content(self.conn, vid), raw)
+
+    def test_hard_link_is_rejected(self):
+        orig = self._write("orig.md", b"shared content\n")
+        hard = Path(self.tmp.name) / "hard.md"
+        os.link(orig, hard)
+        with self.assertRaises(ValueError):
+            capture_file(hard, self.conn)
+
+    def test_fifo_is_rejected_without_blocking(self):
+        fifo = Path(self.tmp.name) / "pipe.md"
+        os.mkfifo(fifo)
+        with self.assertRaises(ValueError):
+            capture_file(fifo, self.conn)
+
+    def test_oversized_file_is_rejected(self):
+        big = Path(self.tmp.name) / "oversized.md"
+        with open(big, "wb") as fh:
+            fh.seek(MAX_ENVELOPE_BYTES)
+            fh.write(b"x")
+        with self.assertRaises(ValueError):
+            capture_file(big, self.conn)
+
+    def test_long_utf8_filename_is_archived_within_255_bytes(self):
+        long_name = "x" + ("\u015f" * 115) + ".md"
+        path = self._write(long_name, b"long filename body\n")
+        archive = Path(self.tmp.name) / "archive" / "captured"
+        eid, _ = capture_file(path, self.conn, archive)
+        self.assertFalse(path.exists())
+        archived_files = list(archive.iterdir())
+        self.assertEqual(len(archived_files), 1)
+        archived_name = archived_files[0].name
+        self.assertTrue(archived_name.startswith(f"{eid}__x"))
+        self.assertTrue(archived_name.endswith(".md"))
+        self.assertLessEqual(len(archived_name.encode("utf-8")), 255)
+        self.assertNotIn("\ufffd", archived_name)
+        self.assertEqual(archived_name[len(eid) + 3:-3], "\u015f" * 110)
+
 
 class WatcherContractTests(unittest.TestCase):
     def setUp(self):
@@ -150,6 +222,41 @@ class WatcherContractTests(unittest.TestCase):
         handler._schedule(str(marker), immediate=True)
         handler._flush()
         self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM envelopes").fetchone()[0], 1)
+
+    def test_symlink_fifo_and_oversized_move_to_failed_without_hanging(self):
+        outside = self.root / "outside.md"
+        outside.write_bytes(b"secret\n")
+        sym = self.outbox / "symlink.md"
+        sym.symlink_to(outside)
+
+        fifo = self.outbox / "pipe.md"
+        os.mkfifo(fifo)
+
+        big = self.outbox / "too_big.md"
+        with open(big, "wb") as fh:
+            fh.seek(MAX_ENVELOPE_BYTES)
+            fh.write(b"x")
+
+        valid = self.outbox / "valid.md"
+        valid.write_bytes(b"valid content\n")
+
+        handler = _OutboxHandler(self.db_path, self.archive, debounce=0)
+        self.addCleanup(
+            lambda: handler._thread_conn and handler._thread_conn.close()
+        )
+        handler.scan_startup(self.outbox)
+        handler._flush()
+
+        failed_dir = self.outbox / ".failed"
+        self.assertTrue((failed_dir / "symlink.md").is_symlink())
+        self.assertTrue(stat.S_ISFIFO((failed_dir / "pipe.md").lstat().st_mode))
+        self.assertTrue((failed_dir / "too_big.md").exists())
+        self.assertFalse(sym.exists() or sym.is_symlink())
+        self.assertFalse(fifo.exists())
+        self.assertFalse(big.exists())
+        self.assertFalse(valid.exists())
+        rows = self.conn.execute("SELECT state FROM envelopes").fetchall()
+        self.assertEqual([r[0] for r in rows], ["PENDING_APPROVAL"])
 
 
 class WatcherIntegrationTest(unittest.TestCase):

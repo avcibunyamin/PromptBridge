@@ -72,7 +72,7 @@ def transaction(conn):
         yield
         conn.execute(f"RELEASE SAVEPOINT {savepoint}" if nested else "COMMIT")
     except BaseException:
-        if nested:
+        if nested and conn.in_transaction:
             conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
             conn.execute(f"RELEASE SAVEPOINT {savepoint}")
         elif conn.in_transaction:

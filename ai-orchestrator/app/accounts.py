@@ -340,5 +340,7 @@ def delete_account(base: str, request: Request):
         )
         accounts = _list_accounts(db_path, validated)
 
+    from app import quota
+    quota.forget(base)
     _refresh_catalog_in_background(db_path, validated)
     return {'deleted': base, 'accounts': accounts}

@@ -35,6 +35,7 @@ if os.environ.get('FAKE_AGY_HANG'):
 if os.environ.get('FAKE_AGY_SIGNED_OUT'):
     print('Error: Please sign in to view available models.'); sys.exit(1)
 print('Fetching available models...')
+print('--flag\\tX')
 print('gemini-3.1-pro-high\\tGemini 3.1 Pro (High)')
 print('claude-sonnet-5-5-high\\tClaude Sonnet 5.5 (High)')
 '''
@@ -43,7 +44,7 @@ CODEX_MODELS = '''import json, sys, os, time
 pages = {
  None: {'data': [{'id': 'gpt-6-sol', 'supportedReasoningEfforts': [{'reasoningEffort': e} for e in ['low','medium','high','xhigh','max','ultra']],
                   'defaultReasoningEffort': 'medium', 'displayName': 'GPT-6 Sol'}], 'nextCursor': 'p2'},
- 'p2': {'data': [{'id': 'gpt-5.5', 'supportedReasoningEfforts': ['low','medium','high','xhigh'],
+ 'p2': {'data': ['not-a-dict', {'id': 'gpt-5.5', 'supportedReasoningEfforts': ['low','medium','high','xhigh'],
                   'defaultReasoningEffort': 'low'}], 'nextCursor': None},
 }
 def emit(m):
@@ -262,6 +263,14 @@ class Catalog(unittest.TestCase):
         self.assertEqual(snap['errors'], {})
         self.assertFalse((self.root / '.system/agy-home').exists())
         self.assertFalse((self.root / 'sec.log').exists())
+
+    def test_malformed_agy_and_codex_model_rows_are_skipped(self):
+        agy_entries, agy_err = catalog._agy(self.db, 'h1')
+        self.assertIsNone(agy_err)
+        self.assertEqual([e['model'] for e in agy_entries], ['gemini-3.1-pro-high', 'claude-sonnet-5-5-high'])
+        codex_entries, codex_err = catalog._codex(self.db, 'codex@is')
+        self.assertIsNone(codex_err)
+        self.assertEqual([e['model'] for e in codex_entries], ['gpt-6-sol', 'gpt-5.5'])
 
     def test_codex_listing_errors_are_bounded(self):
         with patch.dict(os.environ, {'FAKE_CODEX_ERROR': '1'}):

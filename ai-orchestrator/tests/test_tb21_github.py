@@ -9,7 +9,7 @@ import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from fastapi import HTTPException
@@ -79,14 +79,105 @@ class Validation(unittest.TestCase):
         self.assertIn('İnceleyici sonucu: custom (tur ?)', github.pr_body('Hesap', 'FAILED', {'outcome': 'custom', 'current_turn': None}))   # Gemini P3
 
     def test_secret_and_remote_patterns(self):
-        for p in ('.env', '.env.local', 'a/b/server.pem', 'id_rsa', 'deploy/id_ed25519.pub', 'credentials.json', 'x.key'):
+        for p in ('.env', '.env.local', '.ENV', 'CERT.PEM', 'prod.env', '.netrc', '.npmrc', 'cert.p12', 'key.pfx',
+                  'a/b/server.pem', 'id_rsa', 'deploy/id_ed25519.pub', 'credentials.json', 'x.key'):
             self.assertTrue(github.is_secret(p), p)
-        for p in ('env.md', 'src/key.ts', 'docs/credential.md'):
+        for p in ('README.md', 'env.md', 'src/key.ts', 'docs/credential.md'):
             self.assertFalse(github.is_secret(p), p)
         self.assertEqual(github.remote_repo('https://github.com/o/n.git'), 'o/n')
         self.assertEqual(github.remote_repo('git@github.com:o/n.git'), 'o/n')
         for url in ('https://evil.com/o/n', 'https://github.com.evil.com/o/n', 'https://github.com/-x/n', 'https://github.com/o/n/x'):
             self.assertIsNone(github.remote_repo(url), url)
+
+    def test_error_redacts_tokens_and_url_credentials(self):
+        self.assertEqual(github._say('fatal: https://kullanici:parola@github.com/octo/demo.git/'),
+                         'fatal: https://***@github.com/octo/demo.git/')
+        self.assertEqual(github._say('fatal: https://belirteç@github.com/octo/demo.git/'),
+                         'fatal: https://***@github.com/octo/demo.git/')
+        self.assertEqual(github._say('bad ghp_SECRET123 and github_pat_ABC_9 in https://ghs_TOK@github.com/o/n'),
+                         'bad ghp_*** and github_pat_*** in https://***@github.com/o/n')
+        self.assertEqual(github._say('redirect https://github.com/o/n to git@github.com:o/n.git'),
+                         'redirect https://github.com/o/n to git@github.com:o/n.git')
+
+    def test_malformed_gh_json_in_status_and_repos(self):
+        for bad in ('not-json', 'null', '[]', '{"hosts": null}', '{"hosts": []}', '{"hosts": {"github.com": null}}',
+                    '{"hosts": {"github.com": {"active": true}}}', '{"hosts": {"github.com": [null, "x", 1]}}'):
+            with self.subTest(status=bad), patch.object(github, 'gh', return_value=(0, bad)):
+                self.assertEqual(github.status(), {'installed': True, 'logged_in': False, 'account': None})
+        with patch.object(github, 'gh', return_value=(0, '{"hosts": {"github.com": [{"active": true, "state": "success", "login": 123}]}}')):
+            self.assertEqual(github.status(), {'installed': True, 'logged_in': True, 'account': None})
+        for bad in ('null', '{}', '"str"', '[null, 1, "x", {}, {"nameWithOwner": null}, {"nameWithOwner": 7}]'):
+            with self.subTest(repos=bad), patch.object(github, 'gh', return_value=(0, bad)):
+                self.assertEqual(github.repos(), [])
+        mixed = '[null, 1, {"nameWithOwner": null}, {"nameWithOwner": 7}, {"nameWithOwner": "octo/demo", "isPrivate": false, "isArchived": false, "updatedAt": "t"}]'
+        with patch.object(github, 'gh', return_value=(0, mixed)):
+            self.assertEqual([r['nameWithOwner'] for r in github.repos()], ['octo/demo'])
+        with patch.object(github, 'gh', return_value=(0, '{not-json')), self.assertRaises(github.GitHubError) as caught:
+            github.repos()
+        self.assertEqual((caught.exception.code, caught.exception.status), ('gh_failed', 409))
+
+    def test_timeout_closes_pipes_if_post_kill_communicate_hangs(self):
+        stdin, stdout, stderr = MagicMock(), MagicMock(), MagicMock()
+        proc = MagicMock(pid=999999, stdin=stdin, stdout=stdout, stderr=stderr,
+                         communicate=MagicMock(side_effect=subprocess.TimeoutExpired(['gh'], 1)))
+        with patch.object(subprocess, 'Popen', return_value=proc), patch.object(os, 'killpg'):
+            with self.assertRaises(github.GitHubError) as caught:
+                github.run(['/usr/bin/gh', 'auth', 'status'], timeout=1)
+        self.assertEqual((caught.exception.code, caught.exception.status), ('timeout', 504))
+        self.assertEqual(proc.communicate.call_args_list[1].kwargs, {'timeout': 5})
+        stdout.close.assert_called_once()
+        stderr.close.assert_called_once()
+        stdin.close.assert_called_once()
+
+    def test_failed_clone_cleans_up_new_target_only(self):
+        root = Path(__file__).resolve().parent
+        target = root / 'half-clone-test-99'
+        state = {'exists': False, 'symlink': False, 'dir': False}
+        orig_exists, orig_symlink, orig_dir, orig_resolve = Path.exists, Path.is_symlink, Path.is_dir, Path.resolve
+        def fake_exists(p): return state['exists'] if p == target else orig_exists(p)
+        def fake_symlink(p): return state['symlink'] if p == target else orig_symlink(p)
+        def fake_dir(p): return state['dir'] if p == target else orig_dir(p)
+        def fail_half_clone(*args, **kw):
+            state.update(exists=True, dir=True)
+            raise github.GitHubError('timeout', 'gh zaman aşımına uğradı', 504)
+        with (patch.object(github, 'clone_root', return_value=root),
+              patch.object(Path, 'exists', fake_exists),
+              patch.object(Path, 'is_symlink', fake_symlink),
+              patch.object(Path, 'is_dir', fake_dir),
+              patch.object(github.shutil, 'rmtree', side_effect=lambda p, **kw: state.update(exists=False, dir=False)) as rmtree):
+            with patch.object(github, 'gh', side_effect=fail_half_clone), self.assertRaises(github.GitHubError) as caught:
+                github.clone('db', 'octo/half-clone-test-99')
+            self.assertEqual(caught.exception.code, 'timeout')
+            rmtree.assert_called_once_with(target, ignore_errors=True)
+            self.assertFalse(state['exists'])
+
+            rmtree.reset_mock()
+            with patch.object(github, 'gh', side_effect=github.GitHubError('gh_failed', 'boom', 409)), self.assertRaises(github.GitHubError):
+                github.clone('db', 'octo/half-clone-test-99')
+            rmtree.assert_not_called()
+
+            def fail_symlink(*args, **kw):
+                state.update(exists=True, symlink=True)
+                raise github.GitHubError('gh_failed', 'boom', 409)
+            with patch.object(github, 'gh', side_effect=fail_symlink), self.assertRaises(github.GitHubError):
+                github.clone('db', 'octo/half-clone-test-99')
+            rmtree.assert_not_called()
+
+            state.update(exists=False, symlink=False, dir=False)
+            with (patch.object(Path, 'resolve', lambda p, *a, **kw: root.parent / 'escaped' if p == target else orig_resolve(p, *a, **kw)),
+                  patch.object(github, 'gh', side_effect=fail_half_clone),
+                  self.assertRaises(github.GitHubError)):
+                github.clone('db', 'octo/half-clone-test-99')
+            rmtree.assert_not_called()
+
+            state.update(exists=True, symlink=False, dir=True)
+            with (patch.object(github, 'git', side_effect=github.GitHubError('git_failed', 'err', 409)),
+                  patch.object(github, 'gh') as gh_mock,
+                  self.assertRaises(github.GitHubError) as pre_existing):
+                github.clone('db', 'octo/half-clone-test-99')
+            self.assertEqual(pre_existing.exception.code, 'target_exists')
+            gh_mock.assert_not_called()
+            rmtree.assert_not_called()
 
 
 class Api(unittest.TestCase):
@@ -152,6 +243,8 @@ class Api(unittest.TestCase):
     def test_repo_list_drops_unsafe_names(self):
         self.assertEqual([i['nameWithOwner'] for i in self.get('/api/github/repos')['items']], ['octo/demo'])
         self.assertEqual(self.client.get('/api/github/repos', params={'owner': '-evil'}).status_code, 422)
+        with patch.object(github, 'gh', return_value=(0, '{not-json')):
+            self.assertEqual(self.get('/api/github/repos', 409)['code'], 'gh_failed')
 
     def test_clone_needs_the_folder_then_clones_once(self):
         self.assertEqual(self.post('/api/github/clone', {'repo': 'octo/demo'}, 409)['code'], 'clone_dir_missing')
@@ -169,6 +262,18 @@ class Api(unittest.TestCase):
         (self.home / 'code/linked').symlink_to(self.home)
         self.assertEqual(self.post('/api/github/clone', {'repo': 'octo/linked'}, 409)['code'], 'target_exists')
         self.assertEqual(self.gh_calls(), [])
+
+    def test_failed_clone_removes_half_cloned_target(self):
+        self.set_clone_dir()
+        target = self.home / 'code/demo'
+        def broken_gh(*args, **kw):
+            (target / '.git').mkdir(parents=True)
+            (target / '.git/config').write_text(f'[remote "origin"]\n\turl = {github.GITHUB}octo/demo.git\n')
+            raise github.GitHubError('timeout', 'gh zaman aşımına uğradı', 504)
+        with patch.object(github, 'gh', side_effect=broken_gh):
+            self.assertEqual(self.post('/api/github/clone', {'repo': 'octo/demo'}, 504)['code'], 'timeout')
+        self.assertFalse(target.exists())
+        self.assertEqual(self.post('/api/github/clone', {'repo': 'octo/demo'}), {'path': str(target), 'cloned': True})
 
     # ── commit → push → PR ──
     def test_commit_push_and_draft_pr(self):

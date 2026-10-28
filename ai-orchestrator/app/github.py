@@ -10,6 +10,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import signal
 import subprocess
 import time
@@ -29,9 +30,10 @@ PART = re.compile(r'[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,98}[A-Za-z0-9])?')
 LOCAL_OK = re.compile(r'core\.(repositoryformatversion|filemode|bare|logallrefupdates|ignorecase|precomposeunicode|symlinks)'
                       r'|remote\.(origin|upstream)\.(url|fetch|gh-resolved)|branch\..+\.(remote|merge)'
                       r'|user\.(name|email)|extensions\.(objectformat|worktreeconfig)')
-SECRET = ('.env', '.env.*', '*.pem', '*.key', 'id_*', 'credentials*')   # K3: listed, never preselected
+SECRET = ('.env', '.env.*', '*.env', '.netrc', '.npmrc', '*.pem', '*.key', '*.p12', '*.pfx', 'id_*', 'credentials*')   # K3: listed, never preselected
 WORKFLOWS = '.github/workflows/'                                         # K2: push needs a separate confirmation
 TOKEN = re.compile(r'\b(gh[opsur]_|github_pat_)[A-Za-z0-9_]+')
+URL_AUTH = re.compile('://[^/\\s?#\'"`<>]+@')
 
 
 class GitHubError(Exception):
@@ -60,7 +62,8 @@ def branch_for(title: str, work_id: str, now: float | None = None) -> str:
 
 
 def is_secret(path: str) -> bool:
-    return any(fnmatch.fnmatch(Path(path).name, p) for p in SECRET)
+    name = Path(path).name.lower()
+    return any(fnmatch.fnmatch(name, p) for p in SECRET)
 
 
 def digest(value) -> str:
@@ -106,13 +109,22 @@ def run(argv, *, cwd=None, stdin='', timeout=None):
             os.killpg(proc.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
-        proc.communicate()
+        try:
+            proc.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            for stream in (proc.stdout, proc.stderr, proc.stdin):
+                if stream:
+                    try:
+                        stream.close()
+                    except OSError:
+                        pass
+            proc.poll()
         raise GitHubError('timeout', f'{Path(argv[0]).name} zaman aşımına uğradı', 504) from None
     return proc.returncode, out, err
 
 
 def _say(err: str) -> str:
-    return TOKEN.sub(r'\1***', err.strip())[-500:]
+    return URL_AUTH.sub('://***@', TOKEN.sub(r'\1***', err.strip()))[-500:]
 
 
 def gh(*args, stdin='', timeout=None, ok=(0,)):
@@ -154,22 +166,36 @@ def status():
             return {'installed': False, 'logged_in': False, 'account': None}
         raise
     try:
-        hosts = json.loads(out).get('hosts', {}).get('github.com', [])
+        raw = json.loads(out)
     except ValueError:
+        raw = None
+    hosts = raw.get('hosts') if isinstance(raw, dict) else None
+    hosts = hosts.get('github.com') if isinstance(hosts, dict) else []
+    if not isinstance(hosts, list):
         hosts = []
-    active = next((h for h in hosts if h.get('active') and h.get('state') == 'success'), None)
+    active = next((h for h in hosts if isinstance(h, dict) and h.get('active') and h.get('state') == 'success'), None)
+    login = active.get('login') if active else None
     # Only these fields leave this function; `gh` never prints the token without --show-token, and it is not read.
-    return {'installed': True, 'logged_in': bool(active), 'account': active and active.get('login')}
+    return {'installed': True, 'logged_in': bool(active), 'account': login if isinstance(login, str) else None}
 
 
 def repos(owner=None):
     args = ['repo', 'list', *([repo_name(f'{owner}/x').split('/')[0]] if owner else []), '--limit', '200',
             '--json', 'nameWithOwner,isPrivate,isArchived,updatedAt']
     _, out = gh(*args)
+    try:
+        raw = json.loads(out or '[]')
+    except ValueError:
+        raise GitHubError('gh_failed', 'gh çıktısı okunamadı', 409) from None
+    if not isinstance(raw, list):
+        return []
     items = []
-    for item in json.loads(out or '[]'):
+    for item in raw:
+        name = item.get('nameWithOwner') if isinstance(item, dict) else None
+        if not isinstance(name, str):
+            continue
         try:
-            repo_name(item.get('nameWithOwner', ''))
+            repo_name(name)
         except GitHubError:
             continue   # a name that cannot be cloned safely is not offered
         items.append({k: item.get(k) for k in ('nameWithOwner', 'isPrivate', 'isArchived', 'updatedAt')})
@@ -201,7 +227,12 @@ def clone(db_path, repo):
         if not same or target.resolve().parent != root:
             raise GitHubError('target_exists', f'{target} başka bir içerikle dolu')
         return {'path': str(target.resolve()), 'cloned': False}
-    gh('repo', 'clone', repo, str(target), timeout=CLONE_TIMEOUT)
+    try:
+        gh('repo', 'clone', repo, str(target), timeout=CLONE_TIMEOUT)
+    except GitHubError:
+        if not target.is_symlink() and target.exists() and target.resolve().parent == root:
+            shutil.rmtree(target, ignore_errors=True)
+        raise
     if target.is_symlink() or target.resolve().parent != root:
         raise GitHubError('target_exists', 'Klon beklenmeyen bir yere yazıldı')
     return {'path': str(target.resolve()), 'cloned': True}

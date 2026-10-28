@@ -304,11 +304,25 @@ class SessionProbe(unittest.TestCase):
     def test_classification(self):
         cases = [('codex', 0, 'Logged in using ChatGPT\n', 'authenticated'), ('codex', 1, 'Not logged in\n', 'unauthenticated'),
                  ('codex', 0, 'something new', 'unknown'), ('claude', 0, '{"loggedIn": true}', 'authenticated'),
+                 ('claude', 0, 'warning: x\n{"loggedIn": true}', 'authenticated'),
                  ('claude', 1, '{"loggedIn": false}', 'unauthenticated'), ('claude', 0, 'not json', 'unknown'),
                  ('claude', 0, '{"loggedIn": "yes"}', 'unknown')]
         for provider, code, out, expected in cases:
             with self.subTest(provider=provider, out=out):
                 self.assertEqual(provider_auth.classify(provider, code, out), expected)
+
+    def test_large_output_drains_pipe_without_timing_out(self):
+        cli = self.script('head -c 204800 /dev/zero\n')
+        proc = provider_auth.subprocess.Popen([cli], stdin=provider_auth.subprocess.DEVNULL,
+                                              stdout=provider_auth.subprocess.PIPE,
+                                              stderr=provider_auth.subprocess.STDOUT, start_new_session=True)
+        try:
+            buf, exited = provider_auth._read(proc, 2.0)
+        finally:
+            _, gone = provider_auth._cleanup(proc)
+        self.assertTrue(exited)
+        self.assertTrue(gone)
+        self.assertEqual(len(buf), provider_auth.LIMIT)
 
     def test_real_subprocess_output_is_not_kept_and_timeouts_are_unknown(self):
         secret = 'person@example.com'

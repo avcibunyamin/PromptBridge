@@ -203,6 +203,25 @@ def cancel(conn, sid, now=None):
         repo.checkpoint(conn, sid, plan['step_id'], 'wait_cancelled', {'plan_id': plan['id'], 'reason': 'cancelled_by_user'})
 
 
+def _requeue_fired(conn, plan, now, reason):
+    next_at = _next(now, RESTART_DELAY, plan['deadline'])
+    if conn.execute("UPDATE retry_plans SET status='PENDING', next_retry_at=? WHERE id=? AND status='FIRED'",
+                    (next_at, plan['id'])).rowcount == 1:
+        repo.checkpoint(conn, plan['session_id'], plan['step_id'], 'wait_rescheduled',
+                        {'plan_id': plan['id'], 'reason': reason, 'next_retry_at': next_at})
+
+
+def _recover_fired(conn, plan_id, now):
+    try:
+        with transaction(conn):
+            plan = conn.execute("SELECT * FROM retry_plans WHERE id=? AND status='FIRED'", (plan_id,)).fetchone()
+            session = repo.get_session(conn, plan['session_id']) if plan else None
+            if plan and session and session['status'] == 'WAITING_CAPACITY':
+                _requeue_fired(conn, plan, now, 'fire_failed')
+    except Exception:
+        log.exception('retry plan %s recovery failed', plan_id)
+
+
 def reconcile(conn, now=None):
     """Server start, after QUEUED/RUNNING were marked RECOVERY_REQUIRED (that rule is unchanged)."""
     now = now or utcnow()
@@ -213,10 +232,7 @@ def reconcile(conn, now=None):
         for plan in rows:
             waiting = plan['session_status'] == 'WAITING_CAPACITY'
             if plan['status'] == 'FIRED' and waiting:   # fired, but the retry never committed
-                next_at = _next(now, RESTART_DELAY, plan['deadline'])
-                conn.execute("UPDATE retry_plans SET status='PENDING', next_retry_at=? WHERE id=?", (next_at, plan['id']))
-                repo.checkpoint(conn, plan['session_id'], plan['step_id'], 'wait_rescheduled',
-                                {'plan_id': plan['id'], 'reason': 'server_restart', 'next_retry_at': next_at})
+                _requeue_fired(conn, plan, now, 'server_restart')
             elif (plan['status'] == 'FIRED' and plan['session_status'] == 'RECOVERY_REQUIRED') or \
                     (plan['status'] == 'PENDING' and not waiting):
                 reason = 'recovery_required' if plan['session_status'] == 'RECOVERY_REQUIRED' else 'session_not_waiting'
@@ -268,16 +284,20 @@ class RetryScheduler:
                 "SELECT id FROM retry_plans WHERE status='PENDING' AND (next_retry_at<=? OR deadline<=?) "
                 'ORDER BY next_retry_at', (iso(now), iso(now)))]
             for plan_id in due:
-                claimed = claim(conn, plan_id, now)
-                if claimed is None:
-                    continue
-                plan = dict(conn.execute('SELECT * FROM retry_plans WHERE id=?', (plan_id,)).fetchone())
-                outcome = fire(conn, plan, self.excluded, now) if claimed == 'fired' else claimed
-                if outcome == 'queued':
-                    self.start_run(plan['session_id'])
-                results.append((plan['session_id'], outcome))
+                try:
+                    claimed = claim(conn, plan_id, now)
+                    if claimed is None:
+                        continue
+                    plan = dict(conn.execute('SELECT * FROM retry_plans WHERE id=?', (plan_id,)).fetchone())
+                    outcome = fire(conn, plan, self.excluded, now) if claimed == 'fired' else claimed
+                    if outcome == 'queued':
+                        self.start_run(plan['session_id'])
+                    results.append((plan['session_id'], outcome))
+                except Exception:
+                    log.exception('retry plan %s failed', plan_id)
+                    _recover_fired(conn, plan_id, now)
         finally:
             conn.close()
-        if results and self.on_change:
-            self.on_change()   # e.g. wake the work dispatcher so run-status events go out now
+            if results and self.on_change:
+                self.on_change()   # e.g. wake the work dispatcher so run-status events go out now
         return results

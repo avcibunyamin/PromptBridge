@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.8] - 2026-10-28
+
+### Fixed
+- Database: when SQLite ends a transaction by itself inside a nested block, the original error is reported instead of "no such savepoint".
+- Quota view: percentages stay between 0 and 100 and true/false values are not read as numbers; a deleted account no longer stays in the view.
+- GitHub: a failed or timed-out clone leaves no half repository that a later clone would treat as done; the wait after killing a timed-out command is bounded; unexpected `gh` JSON no longer causes a server error; credentials inside URLs are masked in error text; secret file names (`.ENV`, `prod.env`, `.netrc`, `.npmrc`, `*.p12`, `*.pfx`) are recognised regardless of case.
+- Quota wait: one plan's error no longer skips the other due plans or leaves the plan stuck until a restart.
+- Provider checks: a command that prints a lot no longer times out because its output was not drained; a warning line before Claude's status JSON no longer hides a signed-in session; the catalog skips invalid model names and malformed Codex entries.
+
 ## [0.3.7] - 2026-10-26
 
 ### Fixed

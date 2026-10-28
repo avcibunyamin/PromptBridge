@@ -32,7 +32,10 @@ def classify(provider, code, out, model=None):
         try:
             data = json.loads(out)
         except ValueError:
-            return 'unknown'
+            try:
+                data, _ = json.JSONDecoder().raw_decode(out, out.index('{'))
+            except ValueError:
+                return 'unknown'
         value = data.get('loggedIn') if isinstance(data, dict) else None
         return {True: 'authenticated', False: 'unauthenticated'}.get(value, 'unknown') if isinstance(value, bool) else 'unknown'
     text = out.lower()
@@ -64,8 +67,8 @@ def _read(proc, timeout=TIMEOUT):
     deadline, buf, fd = time.monotonic() + timeout, b'', proc.stdout.fileno()
     while time.monotonic() < deadline:
         ready = select.select([fd], [], [], 0.05)[0]
-        chunk = os.read(fd, LIMIT - len(buf)) if ready and len(buf) < LIMIT else b''
-        buf += chunk
+        chunk = os.read(fd, 65536) if ready else b''
+        buf += chunk[:LIMIT - len(buf)]
         if not chunk and _exited(proc.pid):
             return buf, True
         if ready and not chunk:

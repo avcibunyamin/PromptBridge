@@ -71,7 +71,8 @@ def parse_agy_usage(screen):
                           'remaining': None, 'resets_in': None}
                 group['windows'].append(window)
         elif window is not None and (m := re.search(r'(\d{1,3}(?:\.\d+)?)%', line)):
-            window['remaining'] = float(m[1])
+            if float(m[1]) <= 100.0:
+                window['remaining'] = float(m[1])
         elif window is not None and line.startswith('Refreshes in'):
             window['resets_in'] = line[len('Refreshes in'):].strip()[:40]
     groups = [g for g in groups if any(w['remaining'] is not None for w in g['windows'])]
@@ -171,13 +172,15 @@ def codex_groups(result):
     windows = []
     for name in ('primary', 'secondary'):
         w = limits.get(name)
-        if not isinstance(w, dict) or not isinstance(w.get('usedPercent'), (int, float)):
+        used = w.get('usedPercent') if isinstance(w, dict) else None
+        if isinstance(used, bool) or not isinstance(used, (int, float)):
             continue
         mins = w.get('windowDurationMins')
         kind = 'five_hour' if mins == 300 else 'weekly' if mins == 10080 else 'other'
         label = {300: '5 saat', 10080: 'Haftalık', 43200: '30 gün'}.get(mins, f'{mins} dk' if mins else name)
-        windows.append({'label': label, 'kind': kind, 'remaining': max(0.0, 100.0 - float(w['usedPercent'])),
-                        'resets_at': w.get('resetsAt') if isinstance(w.get('resetsAt'), int) else None})
+        resets_at = w.get('resetsAt')
+        windows.append({'label': label, 'kind': kind, 'remaining': min(100.0, max(0.0, 100.0 - float(used))),
+                        'resets_at': resets_at if isinstance(resets_at, int) and not isinstance(resets_at, bool) else None})
     if not windows:
         raise ValueError('no codex rate limit window')
     return [{'key': 'codex', 'title': 'Codex' + (f" ({limits['planType']})" if limits.get('planType') else ''),
@@ -217,14 +220,17 @@ def record_claude(info):
         return
     kind_ = info['rateLimitType']
     used = info.get('utilization')
-    if isinstance(used, (int, float)):
-        used = used * 100 if used <= 1 else used
+    if isinstance(used, bool) or not isinstance(used, (int, float)):
+        used = None
+    elif used <= 1:
+        used = used * 100
+    resets_at = info.get('resetsAt')
     window = {'label': {'five_hour': '5 saat', 'seven_day': 'Haftalık', 'seven_day_opus': 'Haftalık (Opus)',
                         'seven_day_sonnet': 'Haftalık (Sonnet)'}.get(kind_, kind_[:40]),
               'kind': 'five_hour' if kind_ == 'five_hour' else 'weekly' if kind_.startswith('seven_day') else 'other',
-              'remaining': max(0.0, 100.0 - float(used)) if isinstance(used, (int, float)) else None,
+              'remaining': min(100.0, max(0.0, 100.0 - float(used))) if used is not None else None,
               'status': str(info.get('status'))[:30] if info.get('status') else None,
-              'resets_at': info.get('resetsAt') if isinstance(info.get('resetsAt'), int) else None, 'id': kind_}
+              'resets_at': resets_at if isinstance(resets_at, int) and not isinstance(resets_at, bool) else None, 'id': kind_}
     with _lock:
         entry = _cache.setdefault('claude', {'groups': [{'key': 'claude', 'title': 'Claude', 'models': None,
                                                          'windows': []}], 'error': None, 'source': 'run'})
@@ -248,7 +254,8 @@ def _refresh_one(db_path, base):
         kind_ = split(base)[0]
         groups, error = _agy(db_path, split(base)[1]) if kind_ == 'agy' else _codex(db_path, base)
         with _lock:
-            _cache[base] = {'groups': groups, 'error': error, 'checked_at': time.time(), 'source': 'probe'}
+            if base in _running:
+                _cache[base] = {'groups': groups, 'error': error, 'checked_at': time.time(), 'source': 'probe'}
     finally:
         with _lock:
             _running.discard(base)
@@ -293,6 +300,12 @@ def after_run(db_path, identity):
         except Exception:
             pass
     threading.Thread(target=work, name=f'quota-{base}', daemon=True).start()
+
+
+def forget(base):
+    with _lock:
+        _running.discard(base)
+        _cache.pop(base, None)
 
 
 def snapshot():

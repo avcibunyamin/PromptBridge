@@ -6,12 +6,13 @@ import re
 import stat
 import sys
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 
 from starlette.testclient import TestClient
 
-from app import mobile, store
+from app import mobile, quota, store
 from app.adapters.agy import agy_home
 from app.adapters.codex import codex_home
 from app.provider_policy import MAX_ALLOWED, allowed_for, load_config
@@ -231,10 +232,29 @@ class AccountsTest(unittest.TestCase):
         self.assertEqual(add_r.status_code, 200, add_r.text)
         home = Path(agy_home(self.db, 'gecici'))
         self.assertTrue(home.is_dir())
+        started, release = threading.Event(), threading.Event()
 
-        del_r = self.client.delete('/api/accounts/agy@gecici')
-        self.assertEqual(del_r.status_code, 200, del_r.text)
-        self.assertEqual(del_r.json()['deleted'], 'agy@gecici')
+        def slow_agy(db_path, account):
+            started.set()
+            release.wait(5)
+            return [{'key': 'gemini', 'title': 'Gemini', 'models': None, 'windows': [{'remaining': 90.0}]}], None
+
+        with quota._lock:
+            quota._cache['agy@gecici'] = {'groups': [], 'error': None, 'checked_at': 1.0, 'source': 'probe'}
+        with patch.object(quota, '_agy', side_effect=slow_agy):
+            probe = threading.Thread(target=quota._refresh_one, args=(self.db, 'agy@gecici'))
+            probe.start()
+            self.assertTrue(started.wait(5))
+            self.assertIn('agy@gecici', quota.snapshot()['accounts'])
+
+            del_r = self.client.delete('/api/accounts/agy@gecici')
+            self.assertEqual(del_r.status_code, 200, del_r.text)
+            self.assertEqual(del_r.json()['deleted'], 'agy@gecici')
+            self.assertNotIn('agy@gecici', quota.snapshot()['accounts'])
+
+            release.set()
+            probe.join(5)
+        self.assertNotIn('agy@gecici', quota.snapshot()['accounts'])
 
         cfg = load_config(self.providers_file)
         allowed = allowed_for(cfg)

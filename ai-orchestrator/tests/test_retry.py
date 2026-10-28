@@ -221,6 +221,35 @@ class Guards(Base):
         self.assertEqual((self.plans('q')[0]['status'], self.plans('q')[0]['closed_reason'], self.status('q')),
                          ('CANCELLED', 'recovery_required', 'RECOVERY_REQUIRED'))
 
+    async def test_fire_failure_reschedules_plan_continues_batch_and_expires_at_deadline(self):
+        ws2 = Path(self.tmp.name) / 'ws2'; ws2.mkdir()
+        self.create('s'); await self.execute(Script(quota()), 's')
+        self.create('q', workspace=ws2); await self.execute(Script(quota()), 'q')
+        initial_retry_at = self.plans('s')[0]['next_retry_at']
+        real_fire, changed = wait_plans.fire, []
+
+        def flaky_fire(conn, plan, excluded, now):
+            if plan['session_id'] == 's':
+                raise RuntimeError('corrupt snapshot')
+            return real_fire(conn, plan, excluded, now)
+
+        sched = RetryScheduler(self.db, self.started.append, excluded=snapshot_exclusions(self.db),
+                               clock=lambda: utcnow() + timedelta(minutes=30), on_change=lambda: changed.append(True))
+        with patch('app.wait_plans.fire', side_effect=flaky_fire), self.assertLogs('app.wait_plans', level='ERROR'):
+            self.assertEqual(sched.tick(), [('q', 'queued')])
+        self.assertEqual((self.started, self.status('q'), changed), (['q'], 'QUEUED', [True]))
+        [plan_s] = self.plans('s')
+        self.assertEqual((plan_s['status'], plan_s['attempts_so_far'], self.status('s')),
+                         ('PENDING', 0, 'WAITING_CAPACITY'))
+        self.assertGreater(plan_s['next_retry_at'], initial_retry_at)
+        self.assertGreater(plan_s['next_retry_at'], iso(utcnow() + timedelta(minutes=34)))
+        self.assertEqual(self.events('wait_rescheduled', 's'),
+                         [{'plan_id': plan_s['id'], 'reason': 'fire_failed', 'next_retry_at': plan_s['next_retry_at']}])
+        self.assertEqual(self.scheduler(timedelta(hours=5)).tick(), [('s', 'expired')])
+        [plan_s] = self.plans('s')
+        self.assertEqual((plan_s['status'], plan_s['closed_reason'], self.status('s')),
+                         ('EXPIRED', 'retry_deadline_exceeded', 'FAILED'))
+
 
 class WorkQueue(Base):
     async def test_waiting_human_holds_the_work_queue(self):

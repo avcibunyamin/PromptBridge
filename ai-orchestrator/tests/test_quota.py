@@ -82,6 +82,10 @@ class Quota(unittest.TestCase):
         self.assertEqual(quota.parse_agy_usage(SCREEN + SCREEN), groups)
         with self.assertRaises(ValueError):
             quota.parse_agy_usage('? for shortcuts\nsomething else entirely')
+        with self.assertRaises(ValueError):
+            quota.parse_agy_usage('GEMINI MODELS\nWeekly Limit Remaining\n[█████] 250%\nQuota available')
+        partial = quota.parse_agy_usage('GEMINI MODELS\nWeekly Limit Remaining\n[█████] 250%\nFive Hour Limit Remaining\n[████░] 80%')
+        self.assertEqual([(w['kind'], w['remaining']) for w in partial[0]['windows']], [('weekly', None), ('five_hour', 80.0)])
 
     def test_reads_agy_in_a_pty_without_typing_a_message(self):
         groups, error = quota._agy(self.db, 'h1')
@@ -139,17 +143,25 @@ class Quota(unittest.TestCase):
         self.assertEqual(groups[0]['title'], 'Codex (plus)')
         self.assertEqual([(w['kind'], w['remaining'], w['resets_at']) for w in groups[0]['windows']],
                          [('five_hour', 63.0, 1794904630), ('weekly', 87.5, None)])
+        clamped = quota.codex_groups({'rateLimits': {'primary': {'usedPercent': True, 'windowDurationMins': 300},
+                                                     'secondary': {'usedPercent': -10, 'windowDurationMins': 10080}}})
+        self.assertEqual([(w['kind'], w['remaining']) for w in clamped[0]['windows']], [('weekly', 100.0)])
         with self.assertRaises(ValueError):
             quota.codex_groups({'rateLimits': {'primary': None}})
+        with self.assertRaises(ValueError):
+            quota.codex_groups({'rateLimits': {'primary': {'usedPercent': True}}})
 
     def test_claude_rate_limit_events_are_kept_per_window(self):
         quota.record_claude({'status': 'allowed', 'rateLimitType': 'five_hour', 'resetsAt': 1794904630, 'utilization': 0.42})
         quota.record_claude({'status': 'allowed_warning', 'rateLimitType': 'seven_day', 'utilization': 81})
         quota.record_claude({'status': 'allowed', 'rateLimitType': 'five_hour', 'utilization': 0.5})
+        quota.record_claude({'status': 'allowed', 'rateLimitType': 'seven_day_opus', 'utilization': True})
+        quota.record_claude({'status': 'allowed', 'rateLimitType': 'seven_day_sonnet', 'utilization': -10})
         quota.record_claude({'nonsense': True})
         windows = quota.snapshot()['accounts']['claude']['groups'][0]['windows']
         self.assertEqual([(w['id'], w['remaining'], w['status']) for w in windows],
-                         [('seven_day', 19.0, 'allowed_warning'), ('five_hour', 50.0, 'allowed')])
+                         [('seven_day', 19.0, 'allowed_warning'), ('five_hour', 50.0, 'allowed'),
+                          ('seven_day_opus', None, 'allowed'), ('seven_day_sonnet', 100.0, 'allowed')])
 
     def test_claude_usage_gets_the_context_window(self):
         result = {'usage': {'input_tokens': 4}, 'modelUsage': {'claude-sonnet-5-5': {'contextWindow': 200000}}}

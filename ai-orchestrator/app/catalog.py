@@ -109,11 +109,11 @@ def _agy(db_path, account):
         if '\t' not in line:
             continue
         slug, label = [p.strip() for p in line.split('\t', 1)]
-        if slug:
+        if MODEL_RE.fullmatch(slug):
             by_slug[slug] = label
     return [{'identity': identity('agy', account, s), 'provider': 'agy', 'account': account, 'model': s,
              'display_name': by_slug.get(s) or s, 'efforts': [], 'status': 'available', 'source': 'live'}
-            for s in slugs if s], None
+            for s in slugs if MODEL_RE.fullmatch(s)], None
 
 
 def _rpc_line(proc, deadline):
@@ -196,6 +196,8 @@ def _codex(db_path, base):
     entries = []
     _, account, _, _ = split(base)
     for m in models or []:
+        if not isinstance(m, dict):
+            continue
         slug = m.get('id') or m.get('slug') or m.get('name')
         raw_efforts = m.get('supportedReasoningEfforts') or []
         efforts = []

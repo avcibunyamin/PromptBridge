@@ -246,6 +246,14 @@ class StoreTests(unittest.TestCase):
         self.assertIsNotNone(s.get_envelope(self.conn, 'keep'))
         self.assertIsNone(s.get_envelope(self.conn, 'discard'))
 
+    def test_nested_transaction_preserves_error_when_sqlite_ended_transaction(self):
+        with self.assertRaises(ValueError):
+            with s.transaction(self.conn):
+                with s.transaction(self.conn):
+                    self.conn.execute('ROLLBACK')
+                    raise ValueError('abort after explicit rollback')
+        self.assertFalse(self.conn.in_transaction)
+
     def test_concurrent_approvals_have_one_winner(self):
         vid = self.pending()
         gate = Barrier(2)

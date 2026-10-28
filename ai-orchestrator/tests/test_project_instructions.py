@@ -138,6 +138,62 @@ class ResolverTests(unittest.TestCase):
         self.assertEqual(value['reason'], 'symlink')
         self.assertNotIn('unsafe', json.dumps(value))
 
+    def test_hard_link_is_rejected(self):
+        outside = self.root.parent / 'outside.md'
+        outside.write_text('secret', encoding='utf-8')
+        os.link(outside, self.root / 'linked.md')
+        self.write('CLAUDE.md', '@linked.md\n')
+        value = pi.resolve(self.root)
+        self.assertEqual(value['status'], 'rejected')
+        self.assertEqual(value['reason'], 'hard_link')
+        self.assertEqual((value['path'], value['source_path'], value['line']), ('linked.md', 'CLAUDE.md', 1))
+        self.assertNotIn('secret', json.dumps(value))
+        (self.root / 'CLAUDE.md').unlink()
+        os.link(outside, self.root / 'CLAUDE.md')
+        root_value = pi.resolve(self.root)   # a hard-linked root file (dotfile tools) is the user's own: still read
+        self.assertEqual(root_value['status'], 'included')
+
+    def test_import_count_limit(self):
+        self.write('a', 'ok')
+        self.write('CLAUDE.md', '@a\n' * 3)
+        ok = pi.resolve(self.root)
+        self.assertEqual(ok['status'], 'included')
+        self.assertEqual(len(ok['manifest']['edges']), 3)
+        self.write('CLAUDE.md', '@a\n' * pi.MAX_IMPORTS)
+        at_limit = pi.resolve(self.root)
+        self.assertEqual(at_limit['status'], 'included')
+        self.assertEqual(len(at_limit['manifest']['edges']), 64)
+        self.write('CLAUDE.md', '@a\n' * (pi.MAX_IMPORTS + 1))
+        rejected = pi.resolve(self.root)
+        self.assertEqual(rejected['status'], 'rejected')
+        self.assertEqual(rejected['reason'], 'too_many_imports')
+        self.assertEqual((rejected['path'], rejected['source_path'], rejected['line']), ('a', 'CLAUDE.md', 65))
+
+    def test_backtick_fence_rejects_backtick_in_info_string(self):
+        self.write('CLAUDE.md', '```example``` text\n```\n@hidden.md\n```\n@real.md\n')
+        self.write('real.md', 'ok')
+        value = pi.resolve(self.root)
+        self.assertEqual(value['status'], 'included')
+        self.assertEqual([f['path'] for f in value['manifest']['files']], ['CLAUDE.md', 'real.md'])
+
+    def test_indented_lines_neither_import_nor_toggle_fences(self):
+        self.write(
+            'CLAUDE.md',
+            '    @hidden1.md\n'
+            '\t@hidden2.md\n'
+            '    ```\n'
+            '@real.md\n'
+            '```\n'
+            '    ```\n'
+            '\t```\n'
+            '@hidden3.md\n'
+            '```\n',
+        )
+        self.write('real.md', 'ok')
+        value = pi.resolve(self.root)
+        self.assertEqual(value['status'], 'included')
+        self.assertEqual([f['path'] for f in value['manifest']['files']], ['CLAUDE.md', 'real.md'])
+
 
 class FakeFactory:
     def __init__(self, results=None): self.calls, self.results = [], results or {}

@@ -69,6 +69,12 @@ export function PreviewPanel({ workspacePath }: { workspacePath: string }) {
           <p className="muted small">{basename(suggestion.script_path)} · port {suggestion.port}</p>
         </div>
         <code>{argv.join(' ')}</code>
+        {suggestion.scripts && suggestion.scripts.length > 0 && <div className="preview-scripts">
+          <p className="muted small">{t('tools.preview.scripts')}</p>
+          <ul className="small">
+            {suggestion.scripts.map(([name, text], i) => <li key={`${name}-${i}`}>{name}: <code>{text}</code></li>)}
+          </ul>
+        </div>}
       </div>}
       {suggestion && !state?.approved && <div className="reaccept">
         <p><strong>{t('tools.preview.approveLead')}</strong> {t('tools.preview.approveBody')}</p>

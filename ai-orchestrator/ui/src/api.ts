@@ -129,7 +129,7 @@ export interface RunRef { id: string; status: string; git_changed?: string[]   /
 export type Check = 'tests' | 'lint'
 export interface TestRun { status: 'passed' | 'failed' | 'timeout' | 'not_run'; reason?: string | null; command?: string | null
   exit_code?: number | null; duration_s?: number | null }
-export interface TestsStatus { suggestion: { kind: string; label: string; cwd?: string; script_path: string | null; command_digest: string } | null
+export interface TestsStatus { suggestion: { kind: string; label: string; cwd?: string; script_path: string | null; scripts?: [string, string][]; command_digest: string } | null
   approved: boolean; stale: boolean; approved_at: string | null }
 export async function testsStatus(wid: string, check: Check = 'tests'): Promise<TestsStatus> {
   return (await _fetch(`/api/tests/works/${encodeURIComponent(wid)}?check=${check}`)).json()
@@ -275,6 +275,7 @@ export interface PreviewSuggestion {
   env: Record<string, string>
   script_path: string
   script_digest: string | null
+  scripts?: [string, string][]
   port: number
   url: string
   command_digest: string

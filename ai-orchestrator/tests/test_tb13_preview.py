@@ -34,6 +34,50 @@ class PreviewCoreTests(unittest.TestCase):
             second = preview.detect(str(project), port=5173)
         self.assertNotEqual(first["command_digest"], second["command_digest"])
 
+    def test_package_json_scripts_order_truncation_and_stable_digest(self):
+        project = self.root / "npm_scripts"; project.mkdir()
+        pkg_file = project / "package.json"
+        pkg = {
+            "scripts": {
+                "postdev": "x" * 600,
+                "dev": "vite --clearScreen false",
+                "predev": "echo before",
+                "build": "vite build",
+            },
+            "devDependencies": {"vite": "^5"},
+        }
+        pkg_file.write_text(json.dumps(pkg))
+        with patch("app.preview._which", return_value="/usr/bin/npm"):
+            detected = preview.detect(str(project), port=5173)
+        self.assertEqual(detected["scripts"], [
+            ["predev", "echo before"],
+            ["dev", "vite --clearScreen false"],
+            ["postdev", "x" * 500 + "…"],
+        ])
+        expected_digest = preview._digest_payload({
+            "workspace_path": str(project.resolve()),
+            "kind": "vite",
+            "argv": ["/usr/bin/npm", "run", "dev", "--", "--host", "127.0.0.1", "--port", "5173"],
+            "env": {"HOST": "127.0.0.1", "PORT": "5173", "BROWSER": "none"},
+            "script_path": "package.json",
+            "script_digest": preview._sha_file(pkg_file),
+        })
+        self.assertEqual(detected["command_digest"], expected_digest)
+
+        pkg["scripts"] = {"prestart": None, "start": "a" * 500, "poststart": 123}
+        del pkg["devDependencies"]
+        pkg_file.write_text(json.dumps(pkg))
+        with patch("app.preview._which", return_value="/usr/bin/npm"):
+            start_detected = preview.detect(str(project), port=3000)
+        self.assertEqual(start_detected["scripts"], [["start", "a" * 500]])
+
+        py_project = self.root / "py_only"; py_project.mkdir()
+        (py_project / "app.py").write_text("print('ok')\n")
+        self.assertNotIn("scripts", preview.detect(str(py_project), port=8000))
+        static_project = self.root / "static_only"; static_project.mkdir()
+        (static_project / "index.html").write_text("<h1>ok</h1>\n")
+        self.assertNotIn("scripts", preview.detect(str(static_project), port=8080))
+
     def test_static_site_is_served_by_the_file_server_on_loopback(self):
         project = self.root / "site"; project.mkdir()
         (project / "index.html").write_text("<h1>hi</h1>")

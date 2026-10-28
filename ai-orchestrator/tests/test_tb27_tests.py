@@ -51,6 +51,29 @@ class Detect(unittest.TestCase):
         (b / '.venv' / 'bin').mkdir(parents=True); (b / '.venv/bin/python').write_text('')
         self.assertEqual(test_runner.detect(str(a))['command_digest'], test_runner.detect(str(b))['command_digest'])
 
+    def test_npm_scripts_order_truncation_and_digest(self):
+        long_cmd = 'x' * 600
+        (self.root / 'package.json').write_text(json.dumps({
+            'scripts': {'posttest': long_cmd, 'test': 'vitest run', 'pretest': 'node prep.js', 'build': 'tsc',
+                        'prelint': 7, 'lint': 'eslint .', 'postlint': ' ' * 500}
+        }))
+        with patch('app.preview._which', return_value='/usr/bin/npm'):
+            s = test_runner.detect(str(self.root))
+            self.assertEqual(s['scripts'], [['pretest', 'node prep.js'], ['test', 'vitest run'], ['posttest', 'x' * 500 + '…']])
+            lint = test_runner.detect(str(self.root), 'lint')
+            self.assertEqual(lint['scripts'], [['lint', 'eslint .'], ['postlint', ' ' * 500]])
+        without_scripts = test_runner._suggestion('npm', ['npm', 'test', '--silent'], ['/usr/bin/npm', 'test', '--silent'],
+                                                  'package.json', self.root, needs=('node_modules',))
+        self.assertNotIn('scripts', without_scripts)
+        self.assertEqual(s['command_digest'], without_scripts['command_digest'])
+        sha = test_runner.preview._sha_file(self.root / 'package.json')
+        self.assertEqual(s['command_digest'], test_runner.preview._digest_payload({
+            'kind': 'npm', 'command': ['npm', 'test', '--silent'],
+            'script_path': 'package.json', 'script_digest': sha, 'markers': {'package.json': sha},
+        }))
+        py = project(self.root / 'py', '    def test_ok(self): pass\n')
+        self.assertNotIn('scripts', test_runner.detect(str(py)))
+
 
 class Approvals(unittest.TestCase):
     def setUp(self):
@@ -61,6 +84,7 @@ class Approvals(unittest.TestCase):
     def test_approve_stale_revoke(self):
         self.assertIsNone(test_runner.plan(self.conn, self.ws))                       # nothing approved: say nothing
         st = test_runner.status(self.conn, self.ws)
+        self.assertNotIn('scripts', st['suggestion'])
         with self.assertRaises(test_runner.preview.PreviewError):
             test_runner.approve(self.conn, self.ws, '0' * 64)
         test_runner.approve(self.conn, self.ws, st['suggestion']['command_digest'])
@@ -87,6 +111,7 @@ class Approvals(unittest.TestCase):
     def test_npm_without_node_modules_is_not_run(self):
         p = Path(self.ws); (p / 'package.json').write_text(json.dumps({'scripts': {'test': 'node t.js'}}))
         with patch('app.preview._which', return_value='/usr/bin/npm'):
+            self.assertEqual(test_runner.status(self.conn, self.ws)['suggestion']['scripts'], [['test', 'node t.js']])
             test_runner.approve(self.conn, self.ws, test_runner.detect(self.ws)['command_digest'])
             self.assertEqual(test_runner.plan(self.conn, self.ws)['reason'], 'deps_missing')
             (p / 'package.json').write_text(json.dumps({'scripts': {'test': 'node other.js'}}))

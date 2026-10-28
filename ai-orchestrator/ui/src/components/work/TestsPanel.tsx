@@ -35,6 +35,10 @@ function CheckSection({ workId, check, title, hint, onBusy }: { workId: string; 
       : !s ? <p className="muted small">{t('tools.tests.notFound', { hint })}</p>
       : <>
         <p>{t('tools.tests.commandLabel')} <span className="mono">{s.label}</span>{s.cwd && s.cwd !== '.' && <span className="muted small">{t('tools.tests.inFolder', { cwd: s.cwd })}</span>}{s.script_path && <span className="muted small">{t('tools.tests.definedIn')}<span className="mono">{s.script_path}</span></span>}</p>
+        {s.scripts && s.scripts.length > 0 && <div className="small">
+          <p className="muted">{t('tools.tests.scripts')}</p>
+          <ul>{s.scripts.map(([name, cmd]) => <li key={name}><span className="mono">{name}</span>: <code>{cmd}</code></li>)}</ul>
+        </div>}
         {st.approved ? <p className="pill ok"><ShieldCheck aria-hidden /> {t('tools.tests.approved')}</p>
           : st.stale ? <p className="notice">{t('tools.tests.stale')}</p> : null}
         <div className="modal-actions" style={{ justifyContent: 'flex-start' }}>

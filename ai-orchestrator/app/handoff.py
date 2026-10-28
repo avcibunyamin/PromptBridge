@@ -49,7 +49,7 @@ def snapshot(workspace, *, excluded=()):
             try:
                 before = path.lstat()
                 if stat.S_ISLNK(before.st_mode):
-                    files[rel] = {'kind':'symlink','sha256':hashlib.sha256(os.readlink(path).encode()).hexdigest()}
+                    files[rel] = {'kind':'symlink','sha256':hashlib.sha256(os.fsencode(os.readlink(path))).hexdigest()}
                     continue
                 if not stat.S_ISREG(before.st_mode) or before.st_size > MAX_FILE_BYTES or total + before.st_size > MAX_TOTAL_BYTES:
                     unknown.append(rel); continue

@@ -29,6 +29,7 @@ export const tr = {
   'tools.preview.openBrowser': 'Tarayıcıda aç',
   'tools.preview.iframeTitle': 'Proje önizlemesi',
   'tools.preview.log': 'Günlük',
+  'tools.preview.scripts': "package.json'da npm'in çalıştıracağı komutlar",
 
   'tools.gh.status.untracked': 'yeni',
   'tools.gh.status.added': 'eklendi',
@@ -89,6 +90,7 @@ export const tr = {
   'tools.tests.commandLabel': 'Komut:',
   'tools.tests.inFolder': ' · {cwd}/ klasöründe',
   'tools.tests.definedIn': ' · tanım: ',
+  'tools.tests.scripts': "package.json'da npm'in çalıştıracağı komutlar",
   'tools.tests.approved': 'Onaylı',
   'tools.tests.stale': 'Önceki onay geçersiz: komut ya da tanım dosyası değişti.',
   'tools.tests.approve': 'Bu komutu onayla',
@@ -166,6 +168,7 @@ export const en: Record<keyof typeof tr, string> = {
   'tools.preview.openBrowser': 'Open in browser',
   'tools.preview.iframeTitle': 'Project preview',
   'tools.preview.log': 'Log',
+  'tools.preview.scripts': 'Commands npm will run from package.json',
 
   'tools.gh.status.untracked': 'new',
   'tools.gh.status.added': 'added',
@@ -226,6 +229,7 @@ export const en: Record<keyof typeof tr, string> = {
   'tools.tests.commandLabel': 'Command:',
   'tools.tests.inFolder': ' · in {cwd}/',
   'tools.tests.definedIn': ' · defined in: ',
+  'tools.tests.scripts': 'Commands npm will run from package.json',
   'tools.tests.approved': 'Approved',
   'tools.tests.stale': 'Previous approval is invalid: the command or its definition file changed.',
   'tools.tests.approve': 'Approve this command',

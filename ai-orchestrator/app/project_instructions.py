@@ -26,8 +26,10 @@ def header(name):
 
 HEADER = header('CLAUDE.md')
 LIMIT = 16 * 1024
+MAX_IMPORTS = 64
 _DRIVE_OR_URL = re.compile(r'^(?:[A-Za-z]:|[A-Za-z][A-Za-z0-9+.-]*://)')
 _IMPORT = re.compile(r'^@([^\s]+)$')
+_INDENTED = re.compile(r'^(?: {4}| {0,3}\t)')
 
 
 class ResolveError(ValueError):
@@ -70,7 +72,7 @@ def _classify(parent_fd, name, missing='import_not_found'):
     return 'unreadable'
 
 
-def _open_file(root_fd, rel, *, missing='import_not_found'):
+def _open_file(root_fd, rel, *, missing='import_not_found', single_link=False):
     parts = rel.split('/')
     current = os.dup(root_fd)
     try:
@@ -89,6 +91,9 @@ def _open_file(root_fd, rel, *, missing='import_not_found'):
         if not stat.S_ISREG(info.st_mode):
             os.close(fd)
             raise ResolveError('not_regular_file', rel)
+        if single_link and info.st_nlink > 1:   # imports only: a hard-linked root CLAUDE.md (dotfile tools) still works
+            os.close(fd)
+            raise ResolveError('hard_link', rel)
         return fd, info
     finally:
         os.close(current)
@@ -111,9 +116,11 @@ def _imports(text):
     fence = None
     # Split on LF only (CR stripped): Unicode separators must not create import lines.
     for number, line in enumerate(text.split('\n'), 1):
+        if _INDENTED.match(line):
+            continue
         stripped = line.strip()
         marker = re.match(r'^(`{3,}|~{3,})(.*)$', stripped)
-        if fence is None and marker:
+        if fence is None and marker and not (marker.group(1)[0] == '`' and '`' in marker.group(2)):
             fence = (marker.group(1)[0], len(marker.group(1)))   # CommonMark: remember char and length
             continue
         if fence is not None:
@@ -176,9 +183,11 @@ def resolve(workspace, *, provider='claude', test_hook=None):
             nonlocal section_bytes
             if depth > 5:
                 raise ResolveError('depth_exceeded', rel, source_line, source)
+            if source is not None and len(manifest['edges']) >= MAX_IMPORTS:
+                raise ResolveError('too_many_imports', rel, source_line, source)
             _root_unchanged(workspace, root_fd, name)
             try:
-                fd, info = _open_file(root_fd, rel, missing='import_not_found')
+                fd, info = _open_file(root_fd, rel, missing='import_not_found', single_link=source is not None)
             except ResolveError as exc:
                 if source is not None:
                     exc.source_path, exc.line = source, source_line

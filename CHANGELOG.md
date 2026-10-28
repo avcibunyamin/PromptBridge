@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.9] - 2026-10-28
+
+### Added
+- Preview, test and lint approvals show the `package.json` commands npm will actually run, including `pre`/`post` hooks. Existing approvals stay valid.
+
+### Fixed
+- Git check after a run: files are opened without following links or blocking; an unreadable hooks folder is reported instead of failing; nested git folders under `modules/` and `worktrees/` are scanned case-insensitively with a separate limit each, and their `info/attributes` and `objects/info/alternates` are watched. A symlink with a non-UTF-8 target no longer breaks the workspace snapshot.
+- Project instructions: an imported file must not be a hard link, at most 64 imports are followed, a backtick fence whose info string contains a backtick is not a fence, and indented lines are neither fences nor imports. A hard-linked root `CLAUDE.md` keeps working.
+
 ## [0.3.8] - 2026-10-28
 
 ### Fixed

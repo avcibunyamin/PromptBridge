@@ -22,7 +22,10 @@ def _digest(path: Path) -> str:
         if not stat.S_ISREG(st.st_mode):
             return f'special:{stat.S_IFMT(st.st_mode):o}'
         h = hashlib.sha256()
-        with open(path, 'rb') as f:
+        with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), 'rb') as f:
+            st = os.fstat(f.fileno())
+            if not stat.S_ISREG(st.st_mode):
+                return f'special:{stat.S_IFMT(st.st_mode):o}'
             for chunk in iter(lambda: f.read(1 << 20), b''):
                 h.update(chunk)
         # git runs a hook only when it is executable: chmod +x alone arms a hook
@@ -32,24 +35,57 @@ def _digest(path: Path) -> str:
 
 
 def _hooks(folder: Path, prefix: str, found: dict):
-    for p in sorted(folder.iterdir()):
-        if not p.name.endswith('.sample'):
-            found[f'{prefix}/{p.name}'] = _digest(p)
+    try:
+        for p in sorted(folder.iterdir()):
+            if not p.name.endswith('.sample'):
+                found[f'{prefix}/{p.name}'] = _digest(p)
+    except OSError as exc:
+        found[prefix] = f'err:{exc.errno}'
 
 
-def _linked(git: Path) -> Path | None:
+def _linked(git: Path, found: dict | None = None) -> Path | None:
     """The common git directory a linked worktree's `.git` file points to (TB-26: Conductor's own copies)."""
     try:
         st = git.lstat()
         if not stat.S_ISREG(st.st_mode) or st.st_size > 4096:
             return None
-        text = git.read_text(errors='replace').strip()
+        with os.fdopen(os.open(git, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), 'rb') as f:
+            if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
+                return None
+            text = f.read(4096).decode('utf-8', errors='replace').strip()
         if not text.startswith('gitdir:'):
             return None
         gitdir = (git.parent / text[7:].strip()).resolve()
+        if not gitdir.is_dir():
+            return None
         common = gitdir / 'commondir'
-        if common.is_file() and common.stat().st_size <= 4096:
-            gitdir = (gitdir / common.read_text(errors='replace').strip()).resolve()
+        try:
+            cst = common.lstat()
+        except FileNotFoundError:
+            cst = None
+        except OSError as exc:
+            if found is not None:
+                found['common:commondir'] = f'err:{exc.errno}'
+            cst = None
+        if cst is not None:
+            if not stat.S_ISREG(cst.st_mode) or cst.st_size > 4096:
+                if found is not None:
+                    found['common:commondir'] = _digest(common)
+            else:
+                try:
+                    with os.fdopen(os.open(common, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), 'rb') as f:
+                        fst = os.fstat(f.fileno())
+                        if stat.S_ISREG(fst.st_mode):
+                            target = (gitdir / f.read(4096).decode('utf-8', errors='replace').strip()).resolve()
+                            if target.is_dir():
+                                gitdir = target
+                            elif found is not None:
+                                found['common:commondir'] = _digest(common)
+                        elif found is not None:
+                            found['common:commondir'] = f'special:{stat.S_IFMT(fst.st_mode):o}'
+                except OSError as exc:
+                    if found is not None:
+                        found['common:commondir'] = f'err:{exc.errno}'
         return gitdir if gitdir.is_dir() else None
     except OSError:
         return None
@@ -62,7 +98,7 @@ def fingerprint(workspace) -> dict | None:
     git = Path(workspace) / '.git'
     if git.is_symlink() or git.is_file():
         found = {'.git': _digest(git)}
-        common = None if git.is_symlink() else _linked(git)
+        common = None if git.is_symlink() else _linked(git, found)
         if common is not None:
             found.update({'common:' + k[5:]: v for k, v in _git_dir(common).items()})
         return found
@@ -83,21 +119,34 @@ def _git_dir(git: Path) -> dict:
             found[f'.git/{name}'] = _digest(p)
     if (git / 'hooks').is_dir() and '.git/hooks' not in found:
         _hooks(git / 'hooks', '.git/hooks', found)
-    seen = 0
     for top in ('modules', 'worktrees'):
         base = git / top
         if f'.git/{top}' in found or not base.is_dir():
             continue
+        seen = 0
         for directory, dirs, files in os.walk(base, followlinks=False):
             rel = '.git/' + str(Path(directory).relative_to(git))
+            dname = Path(directory).name.casefold()
+            if dname == 'objects':
+                dirs[:] = [d for d in dirs if d.casefold() == 'info']
+                files = []
             for name in files:
                 seen += 1
-                if Path(directory).name == 'hooks' and not name.endswith('.sample') or name in ('config', 'config.worktree'):
+                low = name.casefold()
+                if (
+                    (dname == 'hooks' and not low.endswith('.sample'))
+                    # commondir/gitdir are pointers git rewrites on every `worktree add/remove` (Conductor's
+                    # own copies): watching them would flag every parallel run; they execute nothing
+                    or low in ('config', 'config.worktree')
+                    or (dname == 'info' and low in ('attributes', 'exclude'))
+                    or (rel.casefold().endswith('/objects/info') and low == 'alternates')
+                ):
                     found[f'{rel}/{name}'] = _digest(Path(directory) / name)
             for name in dirs:
                 if (Path(directory) / name).is_symlink():
                     found[f'{rel}/{name}'] = _digest(Path(directory) / name)
-            dirs[:] = [d for d in dirs if d not in ('objects', 'logs', 'refs', 'lfs')]
+            if dname != 'objects':
+                dirs[:] = [d for d in dirs if d.casefold() not in ('logs', 'refs', 'lfs')]
             if seen > NESTED_LIMIT:
                 found[f'.git/{top}'] = 'too_many_entries'
                 break

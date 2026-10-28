@@ -26,6 +26,7 @@ MARKERS = {'tests': ('package.json', 'pytest.ini', 'pyproject.toml', 'setup.cfg'
 CHECKS = ('tests', 'lint')
 SKIP_DIRS = {'node_modules', '.venv', 'venv', 'dist', 'build'}
 NPM_PLACEHOLDER = 'no test specified'   # `npm init`'s default test script only fails
+SCRIPT_MAX = 500
 
 
 def _python(root: Path) -> str:
@@ -45,12 +46,23 @@ def _wants_pytest(root: Path) -> str | None:
     return None
 
 
-def _npm_script(root: Path, *names) -> str | None:
+def _pkg_scripts(root: Path) -> dict[str, Any]:
     try:
-        scripts = json.loads((root / 'package.json').read_text()).get('scripts') or {}
+        scripts = json.loads((root / 'package.json').read_text()).get('scripts')
     except (OSError, ValueError, AttributeError):
-        return None
+        return {}
+    return scripts if isinstance(scripts, dict) else {}
+
+
+def _npm_script(root: Path, *names) -> str | None:
+    scripts = _pkg_scripts(root)
     return next((n for n in names if isinstance(scripts.get(n), str) and scripts[n].strip()), None)
+
+
+def _npm_scripts(root: Path, name: str) -> list[list[str]]:
+    scripts = _pkg_scripts(root)
+    return [[k, scripts[k][:SCRIPT_MAX] + ('…' if len(scripts[k]) > SCRIPT_MAX else '')]
+            for k in (f'pre{name}', name, f'post{name}') if isinstance(scripts.get(k), str)]
 
 
 def _detect_lint(root: Path, cwd: str = '.') -> dict[str, Any] | None:
@@ -61,7 +73,7 @@ def _detect_lint(root: Path, cwd: str = '.') -> dict[str, Any] | None:
         npm = preview._which('npm')
         if script and npm:
             return _suggestion('npm', ['npm', 'run', script, '--silent'], [npm, 'run', script, '--silent'], 'package.json',
-                               root, needs=('node_modules',), check='lint', cwd=cwd)
+                               root, needs=('node_modules',), check='lint', cwd=cwd, scripts=_npm_scripts(root, script))
     if (root / 'tsconfig.json').is_file():
         tsc = 'node_modules/.bin/tsc'
         return _suggestion('tsc', ['tsc', '--noEmit'], [tsc, '--noEmit'], 'tsconfig.json', root, needs=(tsc,), check='lint',
@@ -82,15 +94,12 @@ def _detect_in(root: Path, check: str = 'tests', cwd: str = '.') -> dict[str, An
         return _detect_lint(root, cwd)
     pkg = root / 'package.json'
     if pkg.is_file():
-        try:
-            script = (json.loads(pkg.read_text()).get('scripts') or {}).get('test')
-        except (OSError, ValueError, AttributeError):
-            script = None
+        script = _pkg_scripts(root).get('test')
         if isinstance(script, str) and script.strip() and NPM_PLACEHOLDER not in script:
             npm = preview._which('npm')
             if npm:
                 return _suggestion('npm', ['npm', 'test', '--silent'], [npm, 'test', '--silent'], 'package.json', root,
-                                   needs=('node_modules',), cwd=cwd)
+                                   needs=('node_modules',), cwd=cwd, scripts=_npm_scripts(root, 'test'))
     py = _python(root)
     marker = _wants_pytest(root)
     if marker and (root / '.venv').exists():
@@ -120,7 +129,7 @@ def detect(workspace: str, check: str = 'tests') -> dict[str, Any] | None:
     return None
 
 
-def _suggestion(kind, label_argv, argv, script, root: Path, needs=(), check='tests', cwd: str = '.'):
+def _suggestion(kind, label_argv, argv, script, root: Path, needs=(), check='tests', cwd: str = '.', scripts=None):
     script_digest = preview._sha_file(root / script) if script and (root / script).is_file() else None
     # Argon P2: every file that could switch which tool runs, and whether a project interpreter exists, is part of
     # the approval — adding a pytest.ini or a .venv later must not quietly change what was approved.
@@ -130,7 +139,7 @@ def _suggestion(kind, label_argv, argv, script, root: Path, needs=(), check='tes
     if cwd != '.':   # K-042: a subfolder is part of the approval; a root command keeps its earlier digest (approvals stay valid)
         payload['cwd'] = cwd
     return {**payload, 'cwd': cwd, 'label': ' '.join(label_argv), 'argv': argv, 'needs': list(needs),
-            'command_digest': preview._digest_payload(payload)}
+            'command_digest': preview._digest_payload(payload), **({'scripts': scripts} if scripts is not None else {})}
 
 
 # ── approvals (schema 1.11) ────────────────────────────────────────────────────
@@ -177,7 +186,8 @@ def status(conn, workspace: str, check: str = 'tests') -> dict:
     row = conn.execute("SELECT command_digest, approved_at FROM test_approvals WHERE workspace_path=?",
                        (approval_key(conn, workspace, check),)).fetchone()
     approved = bool(row and suggestion and row[0] == suggestion['command_digest'])
-    return {'suggestion': suggestion and {k: suggestion[k] for k in ('kind', 'label', 'cwd', 'script_path', 'command_digest')},
+    keys = ('kind', 'label', 'cwd', 'script_path', 'command_digest', 'scripts')
+    return {'suggestion': suggestion and {k: suggestion[k] for k in keys if k in suggestion},
             'approved': approved, 'stale': bool(row) and not approved, 'approved_at': row[1] if row else None}
 
 

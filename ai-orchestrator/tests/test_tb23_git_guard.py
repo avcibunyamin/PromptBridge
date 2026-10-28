@@ -86,6 +86,88 @@ class Fingerprint(unittest.TestCase):
         self.assertNotIn('too_many_entries', after.values())
         self.assertEqual(git_guard.changes(before, after), ['.git/worktrees/wt-59/config.worktree'])
 
+    def test_nested_casefold_hooks_and_info_attributes(self):
+        subprocess.run(['git', 'init', '-q', str(self.ws)], check=True)
+        before = git_guard.fingerprint(self.ws)
+        hooks = self.ws / '.git/modules/sub/Hooks'
+        hooks.mkdir(parents=True)
+        (hooks / 'pre-commit').write_text('#!/bin/sh\n')
+        self.assertEqual(
+            git_guard.changes(before, git_guard.fingerprint(self.ws)),
+            ['.git/modules/sub/Hooks/pre-commit'],
+        )
+        before = git_guard.fingerprint(self.ws)
+        info = self.ws / '.git/modules/sub/info'
+        info.mkdir(parents=True)
+        (info / 'attributes').write_text('* filter=lfs\n')
+        self.assertEqual(
+            git_guard.changes(before, git_guard.fingerprint(self.ws)),
+            ['.git/modules/sub/info/attributes'],
+        )
+        before = git_guard.fingerprint(self.ws)
+        obj_info = self.ws / '.git/modules/sub/objects/info'
+        (self.ws / '.git/modules/sub/objects/pack').mkdir(parents=True)
+        obj_info.mkdir(parents=True)
+        (obj_info / 'alternates').write_text('/tmp/obj\n')
+        (self.ws / '.git/modules/sub/commondir').write_text('../..\n')
+        (self.ws / '.git/modules/sub/gitdir').write_text('/tmp/sub/.git\n')
+        self.assertEqual(
+            git_guard.changes(before, git_guard.fingerprint(self.ws)),
+            ['.git/modules/sub/objects/info/alternates'],   # pointers (commondir, gitdir) are not flagged
+        )
+        hooks_dir = self.ws / '.git/hooks'
+        hooks_dir.chmod(0)
+        try:
+            unreadable = git_guard.fingerprint(self.ws)
+            self.assertTrue(unreadable['.git/hooks'].startswith('err:'))
+        finally:
+            hooks_dir.chmod(0o755)
+        wt_dir = self.ws / '.git/worktrees/wt-link'
+        wt_dir.mkdir(parents=True)
+        commondir = wt_dir / 'commondir'
+        commondir.write_text('../..\n')
+        (wt_dir / 'config.worktree').write_text('[core]\n')
+        linked_ws = self.ws / 'linked-wt'
+        linked_ws.mkdir()
+        (linked_ws / '.git').write_text(f'gitdir: {wt_dir}\n')
+        linked_before = git_guard.fingerprint(linked_ws)
+        self.assertIn('common:config', linked_before)
+        commondir.chmod(0)
+        try:
+            linked_after = git_guard.fingerprint(linked_ws)
+            self.assertTrue(linked_after['common:commondir'].startswith('err:'))
+            self.assertIn('common:config.worktree', linked_after)
+        finally:
+            commondir.chmod(0o644)
+
+    def test_modules_overflow_does_not_blind_worktrees(self):
+        subprocess.run(['git', 'init', '-q', str(self.ws)], check=True)
+        mod = self.ws / '.git/modules/sub'
+        mod.mkdir(parents=True)
+        for i in range(501):
+            (mod / f'extra-{i}').write_text('x')
+        wt = self.ws / '.git/worktrees/wt'
+        wt.mkdir(parents=True)
+        (wt / 'config').write_text('[core]\n')
+        before = git_guard.fingerprint(self.ws)
+        self.assertEqual(before.get('.git/modules'), 'too_many_entries')
+        self.assertNotEqual(before.get('.git/worktrees'), 'too_many_entries')
+        (wt / 'config').write_text('[core]\n\thooksPath = /tmp/evil\n')
+        after = git_guard.fingerprint(self.ws)
+        self.assertEqual(git_guard.changes(before, after), ['.git/worktrees/wt/config'])
+
+    def test_handoff_snapshot_non_utf8_symlink_target(self):
+        import hashlib
+        import os
+        from app import handoff
+        os.symlink(b'target-\xff', self.ws / 'bad_link')
+        snap = handoff.snapshot(self.ws)
+        self.assertTrue(snap['complete'])
+        self.assertEqual(snap['files']['bad_link'], {
+            'kind': 'symlink',
+            'sha256': hashlib.sha256(b'target-\xff').hexdigest(),
+        })
+
 
 class RunReportsIt(unittest.IsolatedAsyncioTestCase):
     def setUp(self):

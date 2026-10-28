@@ -121,6 +121,11 @@ def _package_json(root: Path, port: int | None) -> dict[str, Any] | None:
         port = port or _choose_port(3000)
     else:
         port = port or _choose_port(3000)
+    run_scripts = [
+        [name, scripts[name][:500] + "…" if len(scripts[name]) > 500 else scripts[name]]
+        for name in (f"pre{script}", script, f"post{script}")
+        if isinstance(scripts.get(name), str)
+    ]
     return {
         "kind": framework,
         "label": f"npm run {script}",
@@ -128,6 +133,7 @@ def _package_json(root: Path, port: int | None) -> dict[str, Any] | None:
         "env": {"HOST": "127.0.0.1", "PORT": str(port), "BROWSER": "none"},
         "script_path": "package.json",
         "script_digest": _sha_file(pkg),
+        "scripts": run_scripts,
     }
 
 

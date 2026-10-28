@@ -74,15 +74,15 @@ class AccountLockTests(unittest.IsolatedAsyncioTestCase):
                 try:
                     yield {'type': 'process_started', 'ownership': OWNER}
                     yield {'type': 'started', 'provider_session_id': 'sid-1'}
-                    await asyncio.sleep(0.07)
+                    await asyncio.sleep(0.3)
                     yield {'type': 'process_stopped', 'ownership': OWNER}
                     yield {'type': 'completed', 'result': success('ok', 'sid-1')}
                 finally:
                     order.append(('end', self.provider))
                     active -= 1
 
-        # step_timeout=0.12 < 0.07 + 0.07: s2 only succeeds because waiting shifts its deadline forward.
-        sr = SessionRunner(self.db, adapter_factory=SerialAdapter, step_timeout=0.12)
+        # step_timeout=0.5 < 0.3 + 0.3: s2 only succeeds because waiting shifts its deadline forward.
+        sr = SessionRunner(self.db, adapter_factory=SerialAdapter, step_timeout=0.5)
         await asyncio.gather(sr.run_session('s1'), sr.run_session('s2'))
 
         self.assertEqual(repo.get_session(self.conn, 's1')['status'], 'SUCCEEDED')

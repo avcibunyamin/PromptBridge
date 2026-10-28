@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-29
+
+### Fixed
+- The account lock test no longer fails on a slow machine (more slack between the step time and the step limit); no change to the server.
+
 ## [0.4.0] - 2026-10-28
 
 ### Added

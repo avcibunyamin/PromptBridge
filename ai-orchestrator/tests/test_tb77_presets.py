@@ -8,6 +8,7 @@ PRESET_FILES = [
     'providers.example.yaml',
     'providers.claude-only.yaml',
     'providers.codex-only.yaml',
+    'providers.agy-only.yaml',
     'providers.ollama-local.yaml',
 ]
 
@@ -65,6 +66,20 @@ class PresetPolicyTests(unittest.TestCase):
         self.assertEqual([link['provider'] for link in eff['roles']['author']], ['codex'])
         self.assertEqual([link['provider'] for link in eff['roles']['reviewer']], ['codex'])
         self.assertEqual(eff.get('max_context_continuations'), 3)
+        self.assertFalse(eff.get('require_handover_approval'))
+
+    def test_agy_only_preset(self):
+        eff = self._verify_preset('providers.agy-only.yaml')
+        author_specs = [link['provider'] for link in eff['roles']['author']]
+        reviewer_specs = [link['provider'] for link in eff['roles']['reviewer']]
+        self.assertEqual(author_specs, ['agy@acct1/gemini-3.8-flash-high'])
+        self.assertEqual(reviewer_specs, ['agy@acct2/gemini-3.8-flash-high'])
+        author_provider, author_account = author_specs[0].split('/', 1)[0].split('@', 1)
+        reviewer_provider, reviewer_account = reviewer_specs[0].split('/', 1)[0].split('@', 1)
+        self.assertEqual(author_provider, 'agy')
+        self.assertEqual(reviewer_provider, 'agy')
+        self.assertNotEqual(author_account, reviewer_account)
+        self.assertEqual(eff.get('max_context_continuations'), 0)
         self.assertFalse(eff.get('require_handover_approval'))
 
     def test_ollama_local_preset(self):

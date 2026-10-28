@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.10] - 2026-10-28
+
+### Security
+- The server stays on loopback: `serve --host` accepts only `127.0.0.1`, `::1` or `localhost`, and the app answers only loopback clients even when started another way.
+
+### Added
+- `providers.agy-only.yaml` preset (two Antigravity accounts).
+- `doctor` warns when Node.js is older than 22.6.
+
+### Changed
+- README (English and Turkish): `python3 -m venv`, one `cp` line per preset, sign-in order, notes on the doctor warning before `serve`, `--port`, `--help`, and stopping `serve` before installing launchd.
+
+### Fixed
+- The live event stream no longer leaks a subscription when a client disconnects before the first message.
+
 ## [0.3.9] - 2026-10-28
 
 ### Added

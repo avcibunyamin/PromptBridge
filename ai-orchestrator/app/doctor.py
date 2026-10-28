@@ -7,11 +7,24 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
 import sys
 import urllib.request
 from pathlib import Path
 
 HEALTH_URL = 'http://127.0.0.1:8765/health'
+
+
+def _node_version(node: str) -> tuple[tuple[int, int], str] | None:
+    try:
+        proc = subprocess.run([node, '--version'], capture_output=True, text=True, timeout=5)
+        if proc.returncode != 0:
+            return None
+        raw = (proc.stdout or '').strip().splitlines()[0].strip().lstrip('vV')
+        parts = raw.split('.')
+        return (int(parts[0]), int(parts[1])), raw
+    except Exception:
+        return None
 
 
 def _kind(name):
@@ -90,12 +103,16 @@ def run(root: Path, out=print) -> int:
     if (root / 'app' / 'static' / 'index.html').exists():
         line('OK', 'panel', 'app/static/index.html is built')
     else:
-        line('FAIL', 'panel', 'app/static/index.html is missing; cd ui && npm install && npm run build')
+        line('FAIL', 'panel', 'app/static/index.html is missing; cd ui && npm install && npm run build && cd ..')
 
     # e) node
     node = shutil.which('node')
     if node:
-        line('OK', 'node', node)
+        ver = _node_version(node)
+        if ver and ver[0] < (22, 6):
+            line('WARN', 'node', f'node v{ver[1]} found; 22.6+ is needed to build the panel or run UI tests')
+        else:
+            line('OK', 'node', f'{node} (v{ver[1]})' if ver else node)
     else:
         line('WARN', 'node', 'not found; needed only to build the panel')
 

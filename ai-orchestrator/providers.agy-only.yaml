@@ -1,0 +1,15 @@
+# Preset configuration for running solely with Antigravity (agy).
+# Copy this file to .system/providers.yaml to activate.
+# Add both accounts in the panel under Settings -> Accounts so their names match here.
+# Author and reviewer use separate accounts because one agy account runs only one work at a time.
+
+roles:
+  author:
+    - provider: agy@acct1/gemini-3.8-flash-high
+      profile: WRITE
+  reviewer:
+    # Separate agy account and isolated read-only review session.
+    - provider: agy@acct2/gemini-3.8-flash-high
+      profile: READ_ONLY
+require_handover_approval: false
+max_context_continuations: 0

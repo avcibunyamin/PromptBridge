@@ -1,7 +1,9 @@
 """TB-79: `python -m app doctor` installation check (no provider calls, no network)."""
 import contextlib
 import io
+import os
 import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -81,7 +83,9 @@ class DoctorTests(unittest.TestCase):
         lines = []
         self.assertEqual(doctor.run(self.root, out=lines.append), 1)
         self.assertTrue(any(l.startswith('FAIL codex CLI') for l in lines), lines)
-        self.assertTrue(any(l.startswith('FAIL panel') and 'npm run build' in l for l in lines), lines)
+        self.assertTrue(any(l.startswith('FAIL panel')
+                            and 'cd ui && npm install && npm run build && cd ..' in l
+                            for l in lines), lines)
 
     def test_invalid_providers_yaml_fails(self):
         self._install()
@@ -99,6 +103,60 @@ class DoctorTests(unittest.TestCase):
             self.assertEqual(cli.main(['--root', str(self.root), 'doctor']), 0)
         self.assertIn('OK   providers.yaml', buf.getvalue())
         self.assertIn('doctor', cli._COMMANDS)
+
+    def test_node_version_check(self):
+        self._install()
+        self._ready_root()
+        with mock.patch('shutil.which', return_value='/usr/bin/node'):
+            old_proc = subprocess.CompletedProcess(['/usr/bin/node', '--version'], 0, stdout='v20.11.0\n', stderr='')
+            with mock.patch('subprocess.run', return_value=old_proc) as run_mock:
+                lines = []
+                self.assertEqual(doctor.run(self.root, out=lines.append), 0)
+                run_mock.assert_called_once_with(['/usr/bin/node', '--version'],
+                                                 capture_output=True, text=True, timeout=5)
+                self.assertTrue(any(
+                    l == 'WARN node — node v20.11.0 found; 22.6+ is needed to build the panel or run UI tests'
+                    for l in lines
+                ), lines)
+
+            new_proc = subprocess.CompletedProcess(['/usr/bin/node', '--version'], 0, stdout='v22.6.0\n', stderr='')
+            with mock.patch('subprocess.run', return_value=new_proc):
+                lines = []
+                self.assertEqual(doctor.run(self.root, out=lines.append), 0)
+                self.assertTrue(any(l.startswith('OK   node') for l in lines), lines)
+
+    def test_serve_loopback_host_only(self):
+        from app import quota
+        old_root = os.environ.get('AI_ORCHESTRATOR_ROOT')
+        old_auto = quota.AUTO
+
+        def _restore():
+            quota.AUTO = old_auto
+            if old_root is None:
+                os.environ.pop('AI_ORCHESTRATOR_ROOT', None)
+            else:
+                os.environ['AI_ORCHESTRATOR_ROOT'] = old_root
+
+        self.addCleanup(_restore)
+        (self.root / 'app' / 'static').mkdir(parents=True)
+        with mock.patch('uvicorn.run') as run_mock, \
+             mock.patch('app.cli.run_watcher'), \
+             mock.patch('app.catalog.refresh'):
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                rc = cli.main(['--root', str(self.root), 'serve', '--host', '0.0.0.0'])
+            self.assertEqual(rc, 2)
+            self.assertIn('Conductor listens on loopback only; use 127.0.0.1, ::1 or localhost',
+                          err.getvalue())
+            run_mock.assert_not_called()
+
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                rc = cli.main(['--root', str(self.root), 'serve', '--host', '127.0.0.1'])
+            self.assertEqual(rc, 0)
+            run_mock.assert_called_once()
+            self.assertEqual(run_mock.call_args.kwargs.get('host'), '127.0.0.1')
+            self.assertNotIn('Panel →', out.getvalue())
 
 
 if __name__ == '__main__':

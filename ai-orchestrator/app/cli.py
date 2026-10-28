@@ -1,4 +1,4 @@
-"""G5+G6 Demo CLI.
+"""Conductor command line.
 
 Usage:
     python -m app <command> [options]
@@ -8,7 +8,7 @@ Environment:
     AI_ORCHESTRATOR_ROOT   project root (default: parent of this file's package)
 
 Commands:
-    serve               Start the watcher + API server (http://localhost:8765)
+    serve               Start the watcher + API server (panel: http://127.0.0.1:8765/ui/)
     watch               Start the file watcher only (blocks until Ctrl-C)
     list [--state S]    List envelopes (optionally filtered by state)
     show <eid>          Show full envelope + history as JSON
@@ -107,6 +107,11 @@ def _print_table(rows: list[dict]) -> None:
 
 def cmd_serve(args, root: Path) -> int:
     """Start watcher (daemon thread) + FastAPI server (foreground)."""
+    host = getattr(args, "host", "127.0.0.1")
+    if host not in ("127.0.0.1", "::1", "localhost"):
+        print("Conductor listens on loopback only; use 127.0.0.1, ::1 or localhost", file=sys.stderr)
+        return 2
+
     import threading
     import uvicorn
     from .api import create_app, notify_state_change
@@ -137,7 +142,6 @@ def cmd_serve(args, root: Path) -> int:
 
     print(f"[conductor] Watcher started (daemon)")
 
-    host = getattr(args, "host", "127.0.0.1")
     port = getattr(args, "port", 8765)
     reload_ = getattr(args, "reload", False)
 
@@ -157,7 +161,7 @@ def cmd_serve(args, root: Path) -> int:
     app_instance = create_app(static_dir=static_dir if static_dir.exists() else None)
 
     print(f"[conductor] API → http://{host}:{port}  (Ctrl-C to stop)")
-    if (root / "app" / "static").exists():
+    if (root / "app" / "static" / "index.html").exists():
         print(f"[conductor] Panel → http://{host}:{port}/ui/")
 
     from .mobile import MobileGuard, load_config as mobile_config
@@ -333,8 +337,8 @@ def cmd_doctor(args, root: Path) -> int:
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="python -m app.cli",
-        description="Conductor Phase 1 CLI",
+        prog="python -m app",
+        description="Conductor CLI",
     )
     p.add_argument("--root", type=Path, default=None,
                    help="Project root (default: AI_ORCHESTRATOR_ROOT or auto-detect)")
@@ -346,7 +350,8 @@ def _build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="command", required=True)
 
     serve = sub.add_parser("serve", help="Start watcher + API server")
-    serve.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1)")
+    serve.add_argument("--host", default="127.0.0.1",
+                       help="Bind host, loopback only (default: 127.0.0.1)")
     serve.add_argument("--port", type=int, default=8765, help="Bind port (default: 8765)")
     serve.add_argument("--reload", action="store_true", help="Enable uvicorn auto-reload (dev)")
     serve.add_argument("--require-ready", action="store_true",

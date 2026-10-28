@@ -1,6 +1,7 @@
 """F5-Kapanış gate F: every mutating endpoint of the real app keeps mutation_guard and refuses a foreign origin.
 
 Scans the routes instead of listing them, so a new POST/PUT/PATCH/DELETE without the guard fails here."""
+import asyncio
 import os
 from pathlib import Path
 import re
@@ -58,6 +59,49 @@ class MutationGuardScan(unittest.TestCase):
                 body = {'code': '123456'} if gateway_only else {}           # a valid body, so 404 is the route's answer
                 r = client.request(method, path, json=body, headers={'Origin': 'https://evil.example'})
                 self.assertEqual(r.status_code, 404 if gateway_only else 403)
+
+    def test_loopback_only_asgi_middleware(self):
+        async def _call(client, scope_type='http'):
+            scope = {
+                'type': scope_type,
+                'asgi': {'version': '3.0'},
+                'http_version': '1.1',
+                'method': 'GET',
+                'scheme': 'http' if scope_type == 'http' else 'ws',
+                'path': '/health',
+                'raw_path': b'/health',
+                'query_string': b'',
+                'root_path': '',
+                'headers': [(b'host', b'127.0.0.1:8765')],
+                'client': client,
+                'server': ('127.0.0.1', 8765),
+            }
+            sent = []
+
+            async def receive():
+                return {'type': 'http.request', 'body': b'', 'more_body': False}
+
+            async def send(message):
+                sent.append(message)
+
+            await self.app(scope, receive, send)
+            start = next(m for m in sent if m['type'].endswith('http.response.start'))
+            body = b''.join(m.get('body', b'') for m in sent if m['type'].endswith('http.response.body'))
+            return start['status'], body
+
+        async def _run():
+            for scope_type in ('http', 'websocket'):
+                with self.subTest(scope_type=scope_type):
+                    status, body = await _call(('192.168.1.5', 1234), scope_type=scope_type)
+                    self.assertEqual(status, 403)
+                    self.assertEqual(body, b'loopback only')
+
+            for allowed in (('127.0.0.1', 1), ('::1', 1), None):
+                with self.subTest(client=allowed):
+                    status, _ = await _call(allowed)
+                    self.assertEqual(status, 200)
+
+        asyncio.run(_run())
 
 
 if __name__ == '__main__':

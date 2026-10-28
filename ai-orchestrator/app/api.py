@@ -176,6 +176,25 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     log.info("Conductor API stopped")
 
 
+_LOOPBACK_CLIENTS = frozenset({"127.0.0.1", "::1", "testclient"})
+
+
+class _LoopbackOnlyMiddleware:
+    """Pure ASGI middleware rejecting non-loopback HTTP/WebSocket clients."""
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] in ("http", "websocket"):
+            client = scope.get("client")
+            if client is not None and (not client or client[0] not in _LOOPBACK_CLIENTS):
+                resp = PlainTextResponse("loopback only", status_code=403)
+                await resp(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
+
+
 def create_app(static_dir: Path | None = None) -> FastAPI:
     app = FastAPI(
         title="Conductor API",
@@ -393,11 +412,10 @@ def create_app(static_dir: Path | None = None) -> FastAPI:
     @app.get("/api/events")
     async def sse_events(request: Request):
         """Server-Sent Events stream for live envelope state updates."""
-        q = _bus.subscribe()
-
         async def _generate():
-            yield "retry: 2000\n\n"
+            q = _bus.subscribe()
             try:
+                yield "retry: 2000\n\n"
                 while True:
                     if await request.is_disconnected():
                         break
@@ -444,6 +462,7 @@ def create_app(static_dir: Path | None = None) -> FastAPI:
         if _assets.exists():
             app.mount("/assets", _AssetsStaticFiles(directory=str(_assets)), name="assets")
 
+    app.add_middleware(_LoopbackOnlyMiddleware)
     return app
 
 

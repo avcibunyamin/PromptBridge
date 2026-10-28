@@ -37,28 +37,33 @@ All commands after step 1 run inside `ai-orchestrator/`.
    ```
 2. **Create a virtual environment and install requirements:**
    ```sh
-   python3.12 -m venv .venv
+   python3 -m venv .venv
    .venv/bin/python -m pip install -r requirements.txt
    ```
-3. **Create `.system/providers.yaml`** — copy the example, or a preset that matches the CLIs you have:
+   `python3` must be 3.12 or newer (`python3 --version`); use `python3.12` explicitly if your default is older.
+3. **Create `.system/providers.yaml`** — run the `cp` command that matches the CLIs you have:
    ```sh
    mkdir -p .system
-   cp providers.example.yaml .system/providers.yaml      # default chain (codex + claude)
-   # or: providers.claude-only.yaml / providers.codex-only.yaml / providers.ollama-local.yaml
+   cp providers.example.yaml .system/providers.yaml         # default (codex + claude)
+   # cp providers.claude-only.yaml .system/providers.yaml   # claude only
+   # cp providers.codex-only.yaml .system/providers.yaml    # codex only
+   # cp providers.agy-only.yaml .system/providers.yaml      # agy only (two accounts)
+   # cp providers.ollama-local.yaml .system/providers.yaml  # ollama (local)
    ```
 4. **Panel:** a built panel ships in `app/static/`; rebuild it only if you change the UI: `cd ui && npm install && npm run build && cd ..`
 5. **Sign in providers** (only the ones you use):
    - **Claude Code:** run `claude` and use `/login`.
    - **Codex:** `CODEX_HOME="$PWD/.system/codex-home" codex login`
-   - **Antigravity:** add the account in the panel under **Settings → Accounts** and run the command shown there.
-   - **Ollama:** `ollama serve`
+   - **Antigravity:** after opening the panel in Step 7, add the account under **Settings → Accounts** and run the command shown there.
+   - **Ollama:** `ollama serve` runs in a separate terminal (or keep the Ollama app open).
 6. **Check the setup, then start the server:**
    ```sh
    .venv/bin/python -m app doctor     # python, providers.yaml, CLIs, panel — no provider calls
    .venv/bin/python -m app serve
    ```
-7. **Open <http://127.0.0.1:8765/ui/>.** The first-run guide on the overview page walks you through the rest.
-8. **Optional — auto-start on macOS:** `deploy/launchd.sh install`. Stop it with `deploy/launchd.sh uninstall`; a plain `kill` is restarted by launchd.
+   A `server not running` `WARN` from `doctor` before starting the server is normal. If the port is busy, use `.venv/bin/python -m app serve --port <PORT>`; see `.venv/bin/python -m app --help` for all commands.
+7. **Open <http://127.0.0.1:8765/ui/>.** The first-run guide on the overview page walks you through the rest; before your first work, check session status under **Settings → Accounts**.
+8. **Optional — auto-start on macOS:** stop the foreground `serve` with `Ctrl-C` first (same port), then run `deploy/launchd.sh install`. Stop it with `deploy/launchd.sh uninstall`; a plain `kill` is restarted by launchd.
 
 Optional native Mac app: `cd ../apps/mac && make install` (see [apps/mac/README.md](apps/mac/README.md)).
 

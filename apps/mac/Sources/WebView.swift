@@ -43,7 +43,13 @@ struct WebView: NSViewRepresentable {
             if let target = navigationAction.targetFrame {
                 frame = target.isMainFrame ? .main(userActivated: navigationAction.navigationType == .linkActivated) : .sub
             } else {
-                frame = .newWindow
+                let source = navigationAction.sourceFrame
+                let fromPanel = source.isMainFrame && isConductorOrigin(
+                    scheme: source.securityOrigin.protocol,
+                    host: source.securityOrigin.host,
+                    port: Int(source.securityOrigin.port)
+                )
+                frame = .newWindow(fromPanel: fromPanel)
             }
             switch navigationDecision(for: navigationAction.request.url, frame: frame) {
             case .allow:
@@ -61,7 +67,13 @@ struct WebView: NSViewRepresentable {
         /// `window.open` (the panel's "Tarayıcıda aç"): never a window inside the app.
         func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                      for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-            if navigationDecision(for: navigationAction.request.url, frame: .newWindow) == .openExternally,
+            let source = navigationAction.sourceFrame
+            let fromPanel = source.isMainFrame && isConductorOrigin(
+                scheme: source.securityOrigin.protocol,
+                host: source.securityOrigin.host,
+                port: Int(source.securityOrigin.port)
+            )
+            if navigationDecision(for: navigationAction.request.url, frame: .newWindow(fromPanel: fromPanel)) == .openExternally,
                let url = navigationAction.request.url {
                 NSWorkspace.shared.open(url)
             }

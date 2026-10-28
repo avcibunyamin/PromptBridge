@@ -174,6 +174,23 @@ class Ledger(Base):
         self.assertEqual(loop.settle_abandoned(self.conn), 0)                     # already closed
         self.assertFalse(loop.settle(self.conn, seg, 1))                           # a late runner cannot recount
 
+    def test_stop_budget_once_done_writes_no_checkpoint(self):
+        from unittest.mock import patch
+        sid = self.session()
+        self.to_review(sid, 1)
+        loop.close_turn(self.conn, sid, 1, verdict='pass', findings=[], findings_hash=None, invalid_code=None, next_prompts=NEXT)
+        before = self.conn.total_changes
+        with patch.object(repo, 'checkpoint', wraps=repo.checkpoint) as cp:
+            self.assertFalse(loop.stop_budget(self.conn, sid, True))
+            cp.assert_not_called()
+        self.assertEqual(self.conn.total_changes, before)
+        self.assertEqual(loop.state(self.conn, sid)['outcome'], 'verified')
+        sid2 = self.session('s2')
+        with patch.object(repo, 'checkpoint', wraps=repo.checkpoint) as cp:
+            self.assertTrue(loop.stop_budget(self.conn, sid2, True))
+            cp.assert_called_once()
+        self.assertEqual(loop.state(self.conn, sid2)['outcome'], 'budget_exhausted')
+
 
 class Pause(Base):
     def test_request_apply_and_supersede(self):

@@ -95,9 +95,15 @@ def _kill(proc):
 def _agy(db_path, account):
     """(groups, error). Interactive `agy` in the account's own HOME, in Conductor's empty probe folder."""
     from app.adapters.agy import agy_binary, agy_home, prepare_home
+    import stat
     probe_dir = os.path.join(os.path.dirname(os.path.abspath(db_path)), f'agy-probe-{account}')   # own per account
     try:
         os.makedirs(probe_dir, 0o700, exist_ok=True)
+        st = os.lstat(probe_dir)
+        if not stat.S_ISDIR(st.st_mode):
+            return [], 'unavailable'
+        if stat.S_IMODE(st.st_mode) != 0o700:
+            os.chmod(probe_dir, 0o700)
         if os.listdir(probe_dir):
             return [], 'probe_dir_not_empty'                  # never let agy see files here
         binary = agy_binary()

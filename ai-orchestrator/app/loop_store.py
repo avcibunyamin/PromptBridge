@@ -142,11 +142,14 @@ def close_turn(conn, session_id, turn_no, *, verdict, findings, findings_hash, i
 
 def stop_budget(conn, session_id, author_unreviewed):
     with transaction(conn):
-        conn.execute("UPDATE session_loop_state SET phase='done', outcome='budget_exhausted', "
-                     "outcome_reason='active_time', last_author_unreviewed=?, updated_at=? WHERE session_id=? "
-                     "AND phase!='done'", (int(author_unreviewed), _now(), session_id))
+        cur = conn.execute("UPDATE session_loop_state SET phase='done', outcome='budget_exhausted', "
+                           "outcome_reason='active_time', last_author_unreviewed=?, updated_at=? WHERE session_id=? "
+                           "AND phase!='done'", (int(author_unreviewed), _now(), session_id))
+        if cur.rowcount != 1:
+            return False
         repo.checkpoint(conn, session_id, None, 'loop_stopped', {'outcome': 'budget_exhausted',
                                                                  'last_author_unreviewed': bool(author_unreviewed)})
+        return True
 
 
 # ── active-time ledger ──────────────────────────────────────────────────────────

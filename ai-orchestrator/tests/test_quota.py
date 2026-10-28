@@ -22,18 +22,22 @@ SCREEN = ('\x1b[2J/usage\x1b[5;1H└ Models & Quota\x1b[6;3HAccount: a@example.c
           '\x1b[25;3HGemini 4 Argon Weekly Limit\x1b[26;1H[████░] 96.06%\x1b[27;1HRefreshes in 167h 22m'
           '\x1b[28;3H│Within each group, models share a weekly limit\x1b[29;1H↑/↓ Scroll · pgup/pgdown Page')
 
-FAKE_AGY = '''import os, sys, termios, tty
+FAKE_AGY = '''# raw mode before any output: the probe answers as soon as it sees a prompt, and a CR that arrives in canonical mode is turned into LF (CI race, TB-120)
+import os, sys, time, tty
+tty.setraw(0)
 if os.environ.get('FAKE_AGY_LOG'):
     open(os.environ['FAKE_AGY_LOG'], 'a').write(os.getcwd() + ' ' + ' '.join(sys.argv[1:]) + '\\n')
 mode = os.environ.get('FAKE_AGY_MODE', 'ok')
+delay = float(os.environ.get('FAKE_AGY_DELAY_AFTER_PROMPT') or 0)
 out = sys.stdout
 if mode == 'signin':
     out.write('Welcome. You are currently not signed in.\\n Select login method:\\n > 1. Google OAuth\\n'); out.flush()
-    sys.stdin.read(1); sys.exit(0)
+    os.read(0, 1); sys.exit(0)
 out.write('Welcome to the Antigravity CLI. You are currently not signed in.\\n Signing in...\\n')
 if mode in ('trust', 'trust_signin'):
     out.write('Do you trust the contents of this project?\\n > Yes, I trust this folder\\n'); out.flush()
-    tty.setraw(0)
+    if delay:
+        time.sleep(delay)
     if os.read(0, 1) != b'\\r':
         sys.exit(3)
     if mode == 'trust_signin':
@@ -41,10 +45,14 @@ if mode in ('trust', 'trust_signin'):
         while os.read(0, 64):
             pass
 out.write('>\\n? for shortcuts\\n'); out.flush()
-tty.setraw(0)
+if delay:
+    time.sleep(delay)
 typed = b''
 while not typed.endswith(b'\\r'):
-    typed += os.read(0, 64)
+    chunk = os.read(0, 64)
+    if not chunk:
+        sys.exit(4)
+    typed += chunk
 if b'/usage' in typed:
     out.write(os.environ['FAKE_AGY_SCREEN']); out.flush()
 while os.read(0, 64):
@@ -109,6 +117,26 @@ class Quota(unittest.TestCase):
         probe = self.root / '.system/agy-probe-h3'
         probe.mkdir(parents=True); (probe / 'stray.txt').write_text('x')
         self.assertEqual(quota._agy(self.db, 'h3'), ([], 'probe_dir_not_empty'))
+
+    def test_probe_dir_rejects_symlink_and_fixes_permissions(self):
+        probe_perm = self.root / '.system/agy-probe-perm'
+        probe_perm.mkdir(parents=True, mode=0o755)
+        os.chmod(probe_perm, 0o755)
+        self.assertIsNone(quota._agy(self.db, 'perm')[1])
+        self.assertEqual(os.lstat(probe_perm).st_mode & 0o777, 0o700)
+        target = self.root / 'target'
+        target.mkdir(mode=0o755)
+        (self.root / '.system/agy-probe-sym').symlink_to(target)
+        (self.root / 'bin/agy').write_text(f'#!{sys.executable}\nimport pathlib\npathlib.Path("leaked").write_text("x")\n')
+        self.assertEqual(quota._agy(self.db, 'sym'), ([], 'unavailable'))
+        self.assertEqual(os.listdir(target), [])
+
+    def test_raw_mode_before_prompt_prevents_cr_to_lf_race(self):
+        # If setraw ran after printing the prompt, a fast probe answer arrived in canonical mode as LF (TB-120).
+        with patch.dict(os.environ, {'FAKE_AGY_MODE': 'trust', 'FAKE_AGY_DELAY_AFTER_PROMPT': '0.3'}):
+            groups, error = quota._agy(self.db, 'h1')
+        self.assertIsNone(error)
+        self.assertEqual([g['key'] for g in groups], ['gemini', 'claude_gpt', 'argon'])
 
     def test_a_missing_binary_leaks_no_terminal(self):
         before = len(os.listdir('/dev/fd'))

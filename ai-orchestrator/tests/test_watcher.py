@@ -6,6 +6,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from watchdog.observers.polling import PollingObserver
 
@@ -14,6 +15,7 @@ from app.watcher import (
     MAX_ENVELOPE_BYTES,
     _OutboxHandler,
     _make_eid,
+    _move_to_failed,
     _parse_frontmatter,
     capture_file,
     run_watcher,
@@ -61,6 +63,111 @@ class ParseFrontmatterTests(unittest.TestCase):
         self.assertEqual(meta["type"], "spec")
         self.assertEqual(meta["note"], "CRLF note")
         self.assertEqual(body, b"Body line\r\n")
+
+    def test_unclosed_frontmatter_with_body_rule_and_title_has_no_title(self):
+        raw = (
+            b"---\n"
+            b'note: "Open frontmatter"\n\n'
+            + (b"Body paragraph line.\n" * 52)
+            + b"title: Gizli\n"
+            b"---\n"
+            b"Section after horizontal rule\n"
+        )
+        meta, body = _parse_frontmatter(raw)
+        self.assertNotIn("title", meta)
+        self.assertEqual(meta, {})
+        self.assertEqual(body, raw)
+
+    def test_sixty_line_frontmatter_returns_empty_meta(self):
+        extra = b"".join(f"extra_{i}: value_{i}\n".encode("utf-8") for i in range(59))
+        raw = b'---\ntitle: "Too Long"\n' + extra + b"---\nBody\n"
+        meta, body = _parse_frontmatter(raw)
+        self.assertEqual(meta, {})
+        self.assertEqual(body, raw)
+
+    def test_empty_frontmatter_returns_empty_meta_without_error(self):
+        raw = b"---\n---\nBody line\n"
+        meta, body = _parse_frontmatter(raw)
+        self.assertEqual(meta, {})
+        self.assertEqual(body, b"Body line\n")
+
+        meta_crlf, body_crlf = _parse_frontmatter(b"---\r\n---\r\nBody line\r\n")
+        self.assertEqual(meta_crlf, {})
+        self.assertEqual(body_crlf, b"Body line\r\n")
+
+    def test_duplicate_title_keeps_first_value(self):
+        raw = b'---\ntitle: "First Title"\ntitle: "Second Title"\n---\nBody\n'
+        meta, body = _parse_frontmatter(raw)
+        self.assertEqual(meta["title"], "First Title")
+        self.assertEqual(body, b"Body\n")
+
+
+class MoveToFailedRaceTests(unittest.TestCase):
+    def test_race_on_target_retries_atomically_without_replace(self):
+        path = Path("/virtual/outbox/not.md")
+        attempts = []
+
+        def fake_link(src, dst, *, follow_symlinks=True):
+            attempts.append((Path(src), Path(dst), follow_symlinks))
+            if len(attempts) == 1:
+                raise FileExistsError("simulated concurrent target creation")
+
+        fake_stat = os.stat_result((stat.S_IFREG | 0o644, 1, 1, 1, 0, 0, 10, 0, 0, 0))
+        with mock.patch.object(Path, "mkdir"), \
+             mock.patch.object(Path, "lstat", return_value=fake_stat), \
+             mock.patch.object(Path, "unlink") as unlink_mock, \
+             mock.patch.object(Path, "replace", side_effect=AssertionError("replace must not be called")), \
+             mock.patch("app.watcher.os.link", side_effect=fake_link):
+            moved_to = _move_to_failed(path)
+
+        self.assertEqual(len(attempts), 2)
+        self.assertEqual(attempts[0][1], Path("/virtual/outbox/.failed/not.md"))
+        self.assertFalse(attempts[0][2])
+        self.assertRegex(moved_to.name, r"^not\.\d{8}T\d{6}Z-[0-9a-f]{4}\.md$")
+        self.assertEqual(attempts[1][1], moved_to)
+        unlink_mock.assert_called_once_with(missing_ok=True)
+
+    def test_symlink_and_fifo_race_retries_atomically(self):
+        sym_path = Path("/virtual/outbox/sym.md")
+        sym_attempts = []
+
+        def fake_symlink(src, dst):
+            sym_attempts.append((src, Path(dst)))
+            if len(sym_attempts) == 1:
+                raise FileExistsError("simulated symlink collision")
+
+        sym_stat = os.stat_result((stat.S_IFLNK | 0o777, 1, 1, 1, 0, 0, 8, 0, 0, 0))
+        with mock.patch.object(Path, "mkdir"), \
+             mock.patch.object(Path, "lstat", return_value=sym_stat), \
+             mock.patch.object(Path, "unlink") as sym_unlink, \
+             mock.patch("app.watcher.os.readlink", return_value="../outside.md"), \
+             mock.patch("app.watcher.os.symlink", side_effect=fake_symlink):
+            sym_dest = _move_to_failed(sym_path)
+
+        self.assertEqual(len(sym_attempts), 2)
+        self.assertEqual(sym_attempts[0], ("../outside.md", Path("/virtual/outbox/.failed/sym.md")))
+        self.assertRegex(sym_dest.name, r"^sym\.\d{8}T\d{6}Z-[0-9a-f]{4}\.md$")
+        sym_unlink.assert_called_once_with(missing_ok=True)
+
+        fifo_path = Path("/virtual/outbox/pipe.md")
+        fifo_attempts = []
+
+        def fake_mkfifo(dst, mode=0o666):
+            fifo_attempts.append((Path(dst), mode))
+            if len(fifo_attempts) == 1:
+                raise FileExistsError("simulated fifo collision")
+
+        fifo_stat = os.stat_result((stat.S_IFIFO | 0o600, 1, 1, 1, 0, 0, 0, 0, 0, 0))
+        with mock.patch.object(Path, "mkdir"), \
+             mock.patch.object(Path, "lstat", return_value=fifo_stat), \
+             mock.patch.object(Path, "unlink") as fifo_unlink, \
+             mock.patch("app.watcher.os.mkfifo", side_effect=fake_mkfifo):
+            fifo_dest = _move_to_failed(fifo_path)
+
+        self.assertEqual(len(fifo_attempts), 2)
+        self.assertEqual(fifo_attempts[0], (Path("/virtual/outbox/.failed/pipe.md"), 0o600))
+        self.assertRegex(fifo_dest.name, r"^pipe\.\d{8}T\d{6}Z-[0-9a-f]{4}\.md$")
+        fifo_unlink.assert_called_once_with(missing_ok=True)
 
 
 class CaptureFileTests(unittest.TestCase):
@@ -257,6 +364,74 @@ class WatcherContractTests(unittest.TestCase):
         self.assertFalse(valid.exists())
         rows = self.conn.execute("SELECT state FROM envelopes").fetchall()
         self.assertEqual([r[0] for r in rows], ["PENDING_APPROVAL"])
+
+    def test_failed_move_preserves_existing_file_and_uniquifies_name(self):
+        failed_dir = self.outbox / ".failed"
+        failed_dir.mkdir(parents=True)
+        existing = failed_dir / "not.md"
+        existing.write_bytes(b"first failed content\n")
+
+        linked_src = self.root / "linked_src.md"
+        linked_src.write_bytes(b"second failed content\n")
+        second = self.outbox / "not.md"
+        os.link(linked_src, second)
+
+        handler = _OutboxHandler(self.db_path, self.archive, debounce=0)
+        self.addCleanup(
+            lambda: handler._thread_conn and handler._thread_conn.close()
+        )
+        handler.scan_startup(self.outbox)
+        handler._flush()
+
+        self.assertFalse(second.exists())
+        self.assertEqual(existing.read_bytes(), b"first failed content\n")
+        extra_files = [p for p in failed_dir.iterdir() if p.name != "not.md"]
+        self.assertEqual(len(extra_files), 1)
+        self.assertRegex(
+            extra_files[0].name,
+            r"^not\.\d{8}T\d{6}Z-[0-9a-f]{4}\.md$",
+        )
+        self.assertEqual(extra_files[0].read_bytes(), b"second failed content\n")
+
+        third = self.outbox / "not.md"
+        third.write_bytes(b"")
+        handler._schedule(str(third), immediate=True)
+        handler._flush()
+
+        self.assertFalse(third.exists())
+        self.assertEqual(existing.read_bytes(), b"first failed content\n")
+        all_extra = sorted(p.name for p in failed_dir.iterdir() if p.name != "not.md")
+        self.assertEqual(len(all_extra), 2)
+        for name in all_extra:
+            self.assertRegex(name, r"^not\.\d{8}T\d{6}Z-[0-9a-f]{4}\.md$")
+
+    def test_failed_move_concurrent_race_does_not_overwrite(self):
+        linked_src = self.root / "race_src.md"
+        linked_src.write_bytes(b"loser content\n")
+        contender = self.outbox / "not.md"
+        os.link(linked_src, contender)
+
+        real_link = os.link
+        raced_once = False
+
+        def racing_link(src, dst, *, follow_symlinks=True):
+            nonlocal raced_once
+            if not raced_once:
+                raced_once = True
+                Path(dst).write_bytes(b"concurrent winner content\n")
+            return real_link(src, dst, follow_symlinks=follow_symlinks)
+
+        with mock.patch("app.watcher.os.link", side_effect=racing_link):
+            moved_to = _move_to_failed(contender)
+
+        failed_dir = self.outbox / ".failed"
+        self.assertFalse(contender.exists())
+        self.assertEqual(
+            (failed_dir / "not.md").read_bytes(),
+            b"concurrent winner content\n",
+        )
+        self.assertRegex(moved_to.name, r"^not\.\d{8}T\d{6}Z-[0-9a-f]{4}\.md$")
+        self.assertEqual(moved_to.read_bytes(), b"loser content\n")
 
 
 class WatcherIntegrationTest(unittest.TestCase):

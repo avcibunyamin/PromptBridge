@@ -35,7 +35,7 @@ func isAllowedBridgeMessage(name: String, isMainFrame: Bool, origin: WebOrigin) 
 enum NavigationFrame: Equatable {
     case main(userActivated: Bool)
     case sub
-    case newWindow
+    case newWindow(fromPanel: Bool)
 }
 
 /// TB-11a/TB-13a: the app shows only the Conductor panel; its preview iframe may show a local dev server on
@@ -44,7 +44,8 @@ enum NavigationFrame: Equatable {
 func navigationDecision(for url: URL?, frame: NavigationFrame = .main(userActivated: true)) -> NavigationDecision {
     guard let url else { return .cancel }
     if url.scheme == "about" && url.absoluteString == "about:blank" {
-        return frame == .newWindow ? .cancel : .allow
+        if case .newWindow = frame { return .cancel }
+        return .allow
     }
     let web = url.scheme == "http" || url.scheme == "https"
     switch frame {
@@ -53,9 +54,20 @@ func navigationDecision(for url: URL?, frame: NavigationFrame = .main(userActiva
         return web && userActivated ? .openExternally : .cancel
     case .sub:
         return isPreviewOrigin(scheme: url.scheme, host: url.host, port: url.port) ? .allow : .cancel
-    case .newWindow:
-        return web ? .openExternally : .cancel
+    case .newWindow(let fromPanel):
+        return fromPanel && web ? .openExternally : .cancel
     }
+}
+
+func isConductorHealth(_ data: Data) -> Bool {
+    guard let json = try? JSONSerialization.jsonObject(with: data),
+          let health = json as? [String: Any],
+          health["status"] as? String == "ok",
+          let version = health["version"] as? [String: Any],
+          version["schema"] != nil else {
+        return false
+    }
+    return true
 }
 
 /// A local dev server: http on 127.0.0.1 with an explicit port other than Conductor's.

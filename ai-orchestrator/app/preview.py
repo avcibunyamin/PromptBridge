@@ -17,8 +17,7 @@ import socket
 import sys
 import time
 from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.request import urlopen
+from urllib.parse import urlsplit
 
 from app import store
 from app.adapters import process as proc
@@ -397,17 +396,26 @@ async def _ready(url: str, timeout: float = READY_TIMEOUT) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
-            def probe() -> int:
-                with urlopen(url, timeout=0.6) as response:
-                    return int(response.status)
-            status_code = await asyncio.to_thread(probe)
+            parsed = urlsplit(url)
+            port = parsed.port or (443 if parsed.scheme == "https" else 80)
+
+            async def probe() -> int:
+                reader, writer = await asyncio.open_connection(parsed.hostname, port)
+                try:
+                    target = parsed.path or "/"
+                    if parsed.query:
+                        target += "?" + parsed.query
+                    writer.write(f"GET {target} HTTP/1.1\r\nHost: {parsed.hostname}\r\nConnection: close\r\n\r\n".encode())
+                    await writer.drain()
+                    headers = await reader.readuntil(b"\r\n\r\n")
+                    return int(headers.split(b"\r\n", 1)[0].split()[1])
+                finally:
+                    writer.close()
+
+            status_code = await asyncio.wait_for(probe(), min(0.6, deadline - time.monotonic()))
             if 100 <= status_code < 500:
                 return True
-        except HTTPError as exc:
-            if exc.code < 500:
-                return True
-            await asyncio.sleep(POLL_INTERVAL)
-        except (OSError, URLError):
+        except (OSError, asyncio.TimeoutError, asyncio.IncompleteReadError, asyncio.LimitOverrunError, ValueError):
             await asyncio.sleep(POLL_INTERVAL)
     return False
 

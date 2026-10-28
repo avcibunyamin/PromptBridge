@@ -21,6 +21,7 @@ import re
 import stat
 import threading
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -47,8 +48,8 @@ _MAX_ARCHIVE_NAME_BYTES = 255
 
 # ── front-matter ───────────────────────────────────────────────────────────────
 
-_FM_RE = re.compile(r"^---\r?\n(.*?)\r?\n---\r?\n", re.DOTALL)
-_KV_RE = re.compile(r'^(\w+)\s*:\s*"?([^"\r\n]*)"?\s*$', re.MULTILINE)
+_MAX_FM_LINES = 50
+_KV_RE = re.compile(r'^(\w+)\s*:\s*"?([^"\r\n]*)"?\s*$')
 
 _ALLOWED_TYPES = {"spec", "prose", "task", "code"}
 
@@ -60,21 +61,38 @@ def _parse_frontmatter(raw: bytes) -> tuple[dict, bytes]:
     except Exception:
         return {}, raw
 
+    lines = text.split("\n")
+    if not lines or lines[0].removesuffix("\r") != "---":
+        return {}, raw
+
+    close_idx: int | None = None
+    for idx, line in enumerate(lines[1 : 1 + _MAX_FM_LINES], start=1):
+        if line.removesuffix("\r") == "---":
+            close_idx = idx
+            break
+    if close_idx is None:
+        return {}, raw
+
     meta: dict = {}
-    body = raw
-    m = _FM_RE.match(text)
-    if m:
-        for key, val in _KV_RE.findall(m.group(1)):
-            key = key.lower()
-            val = val.strip()
-            if key == "title" and val:
-                meta["title"] = val[:200]
-            elif key == "type" and val in _ALLOWED_TYPES:
-                meta["type"] = val
-            elif key == "note" and val:
-                meta["note"] = val[:500]
-        # body without the front-matter header
-        body = text[m.end():].encode("utf-8")
+    seen_keys: set[str] = set()
+    for raw_line in lines[1:close_idx]:
+        m = _KV_RE.match(raw_line.removesuffix("\r"))
+        if not m:
+            continue
+        key = m.group(1).lower()
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        val = m.group(2).strip()
+        if key == "title" and val:
+            meta["title"] = val[:200]
+        elif key == "type" and val in _ALLOWED_TYPES:
+            meta["type"] = val
+        elif key == "note" and val:
+            meta["note"] = val[:500]
+
+    # body without the front-matter header
+    body = "\n".join(lines[close_idx + 1 :]).encode("utf-8")
     return meta, body
 
 
@@ -235,6 +253,33 @@ def capture_file(path: Path, conn, archive_dir: Path | None = None,
 
 # ── watchdog handler ───────────────────────────────────────────────────────────
 
+def _claim_failed_target(path: Path, st: os.stat_result, target: Path) -> None:
+    """Atomically create *target* from *path*; raise FileExistsError if *target* exists."""
+    if stat.S_ISLNK(st.st_mode):
+        os.symlink(os.readlink(path), target)
+    elif stat.S_ISFIFO(st.st_mode):
+        os.mkfifo(target, stat.S_IMODE(st.st_mode))
+    else:
+        os.link(path, target, follow_symlinks=False)
+    path.unlink(missing_ok=True)
+
+
+def _move_to_failed(path: Path) -> Path:
+    """Move *path* into ``path.parent / '.failed'`` without overwriting existing entries."""
+    failed = path.parent / ".failed"
+    failed.mkdir(parents=True, exist_ok=True)
+    st = path.lstat()
+    target = failed / path.name
+    while True:
+        try:
+            _claim_failed_target(path, st, target)
+            return target
+        except FileExistsError:
+            ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            rnd = os.urandom(2).hex()
+            target = failed / f"{path.stem}.{ts}-{rnd}{path.suffix}"
+
+
 class _OutboxHandler(FileSystemEventHandler):
     """Handle created/moved events in the chatgpt outbox.
 
@@ -329,16 +374,12 @@ class _OutboxHandler(FileSystemEventHandler):
                     from app import push   # TB-29: a file waiting for approval reaches the phone
                     push.on_envelope(self._conn(), result[0])
                 elif path.exists() and path.lstat().st_size == 0:
-                    failed = path.parent / '.failed'
-                    failed.mkdir(parents=True, exist_ok=True)
-                    path.replace(failed / path.name)
+                    _move_to_failed(path)
             except Exception:
                 log.exception("capture_file failed for %s", p)
                 try:
-                    failed = path.parent / '.failed'
-                    failed.mkdir(parents=True, exist_ok=True)
                     if path.exists() or path.is_symlink():
-                        path.replace(failed / path.name)
+                        _move_to_failed(path)
                 except OSError:
                     log.exception("could not move failed source %s", p)
             finally:

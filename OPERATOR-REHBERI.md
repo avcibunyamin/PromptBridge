@@ -13,9 +13,10 @@ cd ai-orchestrator
 python3.12 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 cd ui && npm install && npm run build && cd ..     # paneli app/static/ içine üretir
+.venv/bin/python -m app doctor                     # kurulum ve ortam denetimi (kota harcamaz)
 ```
 
-Sağlayıcı CLI'ları: `codex` (ChatGPT uygulamasındaki ikili de bulunur) ve `claude`, ikisi de kendi hesabınla giriş yapılmış olmalı. Farklı bir ikili için `CONDUCTOR_CODEX_BIN` / `CONDUCTOR_CLAUDE_BIN` ortam değişkenleri.
+Sağlayıcı CLI'ları: `codex` (ChatGPT uygulamasındaki ikili de bulunur) ve `claude`, ikisi de kendi hesabınla giriş yapılmış olmalı. Farklı bir ikili için `CONDUCTOR_CODEX_BIN` / `CONDUCTOR_CLAUDE_BIN` ortam değişkenleri (launchd ajanına yalnız `PATH` aktarılır; `CONDUCTOR_*_BIN` ve `CONDUCTOR_CODEX_HOME` değişkenleri yalnız elle başlatılan `serve` için geçerlidir).
 
 **Codex için ayrı giriş (TB-05, K-014):** Conductor Codex'i senin `~/.codex`'inle değil, kendi `.system/codex-home` alanıyla çalıştırır. Bu alana bir kez giriş yap (ChatGPT uygulamasının ikilisiyle):
 
@@ -213,7 +214,7 @@ Telefondan iş başlayınca Mac'te bildirim çıkar. Telefon kaybolursa: Mac →
 
 Yeniden deneme, devam (“sıradakine geç”), kurtarma, duraklat/sürdür, önizleme, GitHub, oturum kontrolü ve model listesini yenileme telefonda yoktur. İşaret değişiklikleri hemen geçerlidir (telefonda sayfayı yenileyin) ve **Son mobil işlemler**'e yazılır.
 
-**Kapatmak:** `tailscale serve reset` ve/veya panelde **Mobil geçidi aç** işaretini kaldırıp `launchd.sh restart`.
+**Kapatmak:** `tailscale serve reset` ve/veya panelde **Mobil geçidi aç** işaretini kaldırıp `deploy/launchd.sh restart` (`restart` plist'i yeniden üretmez — `PATH`/`PORT` değişikliği için `install` gerekir — ve `/health`'i beklemez).
 
 **Sorun giderme**
 | Belirti | Neden / çözüm |
@@ -241,14 +242,21 @@ Kurtarma otomatik değildir; yanlış süreci öldürmemek için onay senden gel
 Ayrıntı ve kayıt örnekleri: `_isbirligi/teslimler/R1-Canliya-Gecis-Proseduru.md`, `F3-03-Canliya-Gecis.md`, `F3-04-Canliya-Gecis.md`.
 
 1. Salt okunur durum: aktif yürütme (QUEUED/RUNNING/PAUSED/RECOVERY_REQUIRED) ve klasör kilidi yok. Varsa **dur**.
-2. Yazmaları dondur: ajan kuruluysa `deploy/launchd.sh uninstall` (ya da `launchctl bootout gui/$UID/com.promptbridge.conductor`); ajan yoksa `kill -TERM <PID>`. Süreç bitti ve 8765 kapalı doğrulanır (ajan kuruluyken `kill` durdurmaz, launchd geri açar).
-3. Yedek — SQLite backup API ile (`cp` değil):
+2. Yazmaları dondur: ajan kuruluysa `deploy/launchd.sh uninstall` (`launchctl bootout` kullanma: plist yerinde kalır, makine yeniden başlarsa ajan açılır); ajan yoksa `kill -TERM <PID>`. Süreç bitti ve 8765 kapalı doğrulanır (ajan kuruluyken `kill` durdurmaz, launchd geri açar).
+3. Yedek — SQLite backup API ile (`cp` değil; hedef dosya varsa üzerine yazma, durdur):
    ```sh
-   .venv/bin/python -c "import sqlite3; s=sqlite3.connect('file:.system/state.db?mode=ro',uri=True); d=sqlite3.connect('.system/state.pre-<ad>.db'); s.backup(d)"
+   .venv/bin/python -c "import os,sqlite3; p='.system/state.pre-<ad>.db'; assert not os.path.exists(p), 'hedef var'; s=sqlite3.connect('file:.system/state.db?mode=ro',uri=True); d=sqlite3.connect(p); s.backup(d); d.close(); s.close()"
+   cp -p .system/settings.json .system/settings.pre-<ad>.json
+   cp -p .system/providers.yaml .system/providers.pre-<ad>.yaml
    ```
-   `PRAGMA integrity_check` = ok, satır sayılarını kaydet.
+   `PRAGMA integrity_check` = ok, satır sayılarını kaydet. `.system/codex-home` ve `agy` ev klasörleri (`.system/agy-home-*`) bu yedeğe girmez.
 4. Kod `main`'de; `cd ui && npm run build` (panel yalnız sunucu durmuşken değişsin).
-5. **Şema değişiyorsa kopya provası:** yedeğin kopyasını geçici bir köke koy, yeni kodla `store.migrate` ×2, `--root <kök> serve --port 8766` ile GET uçları ve panel; sonra kapat.
+5. **Şema değişiyorsa kopya provası:** geçici köke `.system/state.db` kopyasını ve panel için `app/static` klasörünü koy, yeni kodla `store.migrate` ×2 çalıştır, `--root <kök> serve --port 8766` ile GET uçlarını ve paneli doğrula; sonra kapat (mobil geçit açıksa prova `8770`'i de dinlemeye çalışır):
+   ```sh
+   mkdir -p <kök>/.system <kök>/app && cp .system/state.db <kök>/.system/state.db && cp -R app/static <kök>/app/static
+   .venv/bin/python -c "from app import store; c=store.connect('<kök>/.system/state.db'); store.migrate(c); store.migrate(c); c.close()"
+   .venv/bin/python -m app --root <kök> serve --port 8766
+   ```
 6. Başlat: `deploy/launchd.sh install` (ajan kullanılmıyorsa `nohup … serve > .system/server-<ad>.log 2>&1 &`) → yeni PID (`deploy/launchd.sh status`). 5. adımdaki kopya provası sunucusu (`--port 8766`) launchd dışındadır, `kill -TERM` ile kapatılır.
 7. Doğrula: `/health` (commit/şema/bundle beklenen), uçlar 200, yabancı origin POST 403, satır sayıları yedekle aynı, log ve tarayıcı konsolu hatasız.
 8. Kayıt: `app/static` + `_isbirligi/DURUM.md` + canlıya geçiş notu → commit.
@@ -256,20 +264,21 @@ Ayrıntı ve kayıt örnekleri: `_isbirligi/teslimler/R1-Canliya-Gecis-Proseduru
 ## 8. Yedekler ve geri dönüş
 
 - Yedekler `.system/state.pre-<ad>.db` (+ `.counts.json`). Asla yerinde düzenleme; deneme hep **kopyada**.
-- Şema yükseltmesi tek yönlüdür: **eski kod yeni şemayı açmaz** (`Unsupported database schema version`). Geri dönmek = yedeği geri koymak **ve** o yedeğin kodunu çalıştırmak.
+- Şema yükseltmesi tek yönlüdür: **eski kod yeni şemayı açmaz** (`Unsupported database schema version`). Geri dönmek = yedeği geri koymak **ve** o yedeğin kodunu çalıştırmak. **Uyarı:** yeni kodla hiçbir `.venv/bin/python -m app ...` alt komutunu eski şemalı bir yedek DB üzerinde çalıştırma (her alt komut açılışta göç yapar; kök `--root` ya da `AI_ORCHESTRATOR_ROOT` ortam değişkeniyle seçilir).
 - **Önce güncel veriyi koru:** yedek geri konunca yükseltmeden sonra yazılan her şey (yeni çalışmalar, mesajlar, yürütmeler) kaybolur (F3-06 provasında görüldü). Geri dönmeden önce güncel `state.db`'yi backup API ile ayrı bir dosyaya al; hangi verinin kaybolacağını bilerek karar ver.
-- Sıra: sunucuyu durdur (ajan kuruluysa `deploy/launchd.sh uninstall`, değilse `kill -TERM`) → güncel DB'nin yedeği → `state.db` (+ `-wal`, `-shm`) yerine yedeğin kopyası → eski kodu (`git worktree` ya da `git archive <commit>`) o DB ile başlat (eski kod için ajan kurmadan `nohup … serve`; ajan her zaman bu checkout'un kodunu çalıştırır) → `/health` ve panel → kalıcı dönüşte ajanı yeniden `install`.
+- Sıra: sunucuyu durdur (ajan kuruluysa `deploy/launchd.sh uninstall`, değilse `kill -TERM`) → güncel DB'nin yedeği → önce `rm -f .system/state.db-wal .system/state.db-shm`, sonra `cp .system/state.pre-<ad>.db .system/state.db` (eski WAL çerçeveleri geri yüklenen DB'ye uygulanabilir) → eski kodu (`git worktree` ya da `git archive <commit>`) o DB ile başlat (eski kod için ajan kurmadan `nohup … serve`; ajan her zaman bu checkout'un kodunu çalıştırır) → `/health` ve panel → kalıcı dönüşte ajanı yeniden `install`.
 
 ## 9. Sorun giderme
 
 | Belirti | Neden / çözüm |
 |---|---|
-| Panel açılmıyor, 8765 boş | Sunucu çalışmıyor (ör. yeniden başlatma sonrası) → §3 |
-| “Adres kullanımda” | Başka bir `serve` açık → `lsof -nP -iTCP:8765 -sTCP:LISTEN` |
+| Kurulum / ortam ön denetimi | `.venv/bin/python -m app doctor` (kota harcamaz) |
+| Panel açılmıyor, 8765 boş | Sunucu çalışmıyor (ör. ajan kurulu değilken yeniden başlatma sonrası; ajan kuruluysa `deploy/launchd.sh status` ve log) → §3 |
+| “Adres kullanımda” | Başka bir `serve` açık → `lsof -nP -iTCP:8765 -sTCP:LISTEN` (mobil geçit açıksa `lsof -nP -iTCP:8770 -sTCP:LISTEN`) |
 | `install`: “port 8765 is in use by another process” | Elle açılmış `serve`/eski `nohup` sunucu çalışıyor → onu `kill -TERM` ile durdur, sonra `install` |
 | `kill` sonrası sunucu geri geldi | Beklenen: launchd ajanı `KeepAlive` → durdurmak için `deploy/launchd.sh uninstall` |
 | Ajan durumu / son çıkış | `deploy/launchd.sh status` ya da `launchctl print gui/$UID/com.promptbridge.conductor` (state, pid, last exit code, runs); ayrıntı `~/Library/Logs/Conductor/server-launchd.log` |
-| Ajan başlamıyor, `last exit code = 78: EX_CONFIG`, logda yeni satır yok | launchd programı hiç çalıştıramıyor: genellikle macOS gizliliği (Masaüstü'ndeki bir dosyaya/klasöre erişim, `com.apple.macl` etiketi). Log artık Masaüstü dışında; sürerse `deploy/launchd.sh uninstall` → `install`, yine sürerse Python'a Tam Disk Erişimi. |
+| Ajan başlamıyor, `last exit code = 78: EX_CONFIG`, logda yeni satır yok | launchd programı hiç çalıştıramıyor: genellikle macOS gizliliği (Masaüstü'ndeki bir dosyaya/klasöre erişim, `com.apple.macl` etiketi). Log artık Masaüstü dışında; sürerse doğrudan `deploy/launchd.sh install` (`install` zaten durdurur), yine sürerse Python'a Tam Disk Erişimi. |
 | Sunucu ~30 sn'de bir düşüp kalkıyor | Açılışta kalıcı hata (ör. bilinmeyen şema, runner kilidi) → log'a bak; düzeltene kadar `uninstall` |
 | Mesaj 409 `conflict` | Politika değişti; takımı yeniden önizle ve kabul et |
 | Mesaj 409 `IDEMPOTENCY_CONFLICT` | Aynı mesaj kimliği farklı içerikle; panel yeni kimlik üretir, bekleyen yerel kaydı sil |

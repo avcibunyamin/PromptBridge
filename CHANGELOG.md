@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.11] - 2026-10-28
+
+### Security
+- Mac app: only the panel itself can open a new window in the default browser; a page in the preview frame cannot. The app treats the server as running only when `/health` is Conductor's.
+
+### Fixed
+- Preview readiness check is fully bounded in time.
+- Envelope front matter is read line by line (closing marker within the first 50 lines; the first value of a repeated key wins), and a failed source never overwrites an earlier one in `.failed/`.
+- On shutdown, preview processes are stopped even when the database cannot be opened; every file under `/ui` is served with `Cache-Control: no-cache`.
+- A budget stop on a loop that already finished writes no record; the Antigravity quota probe folder must be a real directory with mode 0700.
+- `deploy/launchd.sh install` checks the new plist before stopping the running agent.
+- Tests that could fail on a slow machine (quota probe terminal mode, catalog hang) are now stable.
+
+### Changed
+- Operator guide: remove `state.db-wal`/`-shm` before restoring a backup, a backup command that never overwrites, full rehearsal commands, notes on `restart`, environment variables under launchd, and `doctor`.
+
 ## [0.3.10] - 2026-10-28
 
 ### Security

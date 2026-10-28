@@ -71,11 +71,11 @@ case "${1:-}" in
 install)
     [ -x "$PY" ] || fail "missing $PY (create the venv first)"
     if [ -n "$ROOT" ]; then [ -d "$(dirname "$LOG")" ] || fail "missing $(dirname "$LOG") (log folder)"; else mkdir -p "$(dirname "$LOG")"; fi
-    stop_agent                                              # idempotent: a loaded agent is replaced
-    listening && fail "port $PORT is in use by another process (e.g. a nohup serve); stop it first"
     tmp="$(mktemp -t conductor-plist)"
-    render "$tmp"
+    render "$tmp"                                           # render and lint before stop_agent so a broken plist never stops a running agent
     plutil -lint "$tmp" >/dev/null || { rm -f "$tmp"; fail "rendered plist failed plutil -lint"; }
+    stop_agent                                              # idempotent: a loaded agent is replaced
+    listening && { rm -f "$tmp"; fail "port $PORT is in use by another process (e.g. a nohup serve); stop it first"; }
     mkdir -p "$(dirname "$PLIST")"
     mv "$tmp" "$PLIST"; chmod 644 "$PLIST"
     bootstrap

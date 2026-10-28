@@ -7,7 +7,6 @@ import tempfile
 import textwrap
 import unittest
 from unittest.mock import patch
-from urllib.error import HTTPError
 
 from starlette.testclient import TestClient
 
@@ -101,11 +100,40 @@ class PreviewCoreTests(unittest.TestCase):
         self.assertEqual(env, {**kept, "PORT": "5000", "HOST": "127.0.0.1"})   # nothing else, in particular no secret
 
     def test_ready_accepts_4xx_http_error_and_waits_on_5xx(self):
-        err_404 = HTTPError("http://127.0.0.1:8000/", 404, "Not Found", None, None)
-        with patch("app.preview.urlopen", side_effect=err_404):
+        class Writer:
+            def write(self, _data): pass
+            async def drain(self): pass
+            def close(self): pass
+
+        async def response(status):
+            reader = asyncio.StreamReader()
+            reader.feed_data(f"HTTP/1.1 {status} Response\r\nContent-Length: 0\r\n\r\n".encode())
+            reader.feed_eof()
+            return reader, Writer()
+
+        async def not_found(*_args):
+            return await response(404)
+
+        async def server_error(*_args):
+            return await response(500)
+
+        with patch("app.preview.asyncio.open_connection", side_effect=not_found):
             self.assertTrue(asyncio.run(preview._ready("http://127.0.0.1:8000/", timeout=0.05)))
-        err_500 = HTTPError("http://127.0.0.1:8000/", 500, "Server Error", None, None)
-        with patch("app.preview.urlopen", side_effect=err_500), patch("app.preview.POLL_INTERVAL", 0.01):
+        with patch("app.preview.asyncio.open_connection", side_effect=server_error), patch("app.preview.POLL_INTERVAL", 0.01):
+            self.assertFalse(asyncio.run(preview._ready("http://127.0.0.1:8000/", timeout=0.03)))
+
+    def test_ready_bounds_a_server_that_never_finishes_response_headers(self):
+        class Writer:
+            def write(self, _data): pass
+            async def drain(self): pass
+            def close(self): pass
+
+        async def incomplete_response(*_args):
+            reader = asyncio.StreamReader()
+            reader.feed_data(b"HTTP/1.1 200 OK\r\nX-Slow: ")
+            return reader, Writer()
+
+        with patch("app.preview.asyncio.open_connection", side_effect=incomplete_response):
             self.assertFalse(asyncio.run(preview._ready("http://127.0.0.1:8000/", timeout=0.03)))
 
     def test_migration_adds_preview_tables(self):

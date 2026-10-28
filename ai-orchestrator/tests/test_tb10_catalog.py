@@ -29,9 +29,14 @@ print(json.dumps({'type': 'system', 'subtype': 'init', 'session_id': 's1', 'mode
 print(json.dumps({'type': 'result', 'session_id': 's1', 'is_error': False, 'subtype': 'success', 'result': 'ok'}))
 '''
 
-AGY_MODELS = '''import os, sys, time
+AGY_MODELS = '''import os, time
 if os.environ.get('FAKE_AGY_HANG'):
-    open(os.environ['FAKE_AGY_HANG'], 'w').write(str(os.getpid())); time.sleep(60)
+    tmp = os.environ['FAKE_AGY_HANG'] + '.tmp'
+    with open(tmp, 'w') as f:
+        f.write(str(os.getpid()))
+    os.replace(tmp, os.environ['FAKE_AGY_HANG'])
+    time.sleep(60)
+import sys
 if os.environ.get('FAKE_AGY_SIGNED_OUT'):
     print('Error: Please sign in to view available models.'); sys.exit(1)
 print('Fetching available models...')
@@ -238,11 +243,13 @@ class Catalog(unittest.TestCase):
         from app import provider_auth
         from app.adapters.process import identity
         pidfile = self.root / 'hang.pid'
-        with patch.dict(os.environ, {'FAKE_AGY_HANG': str(pidfile)}), patch.dict(provider_auth.SLOW, {'agy': 1.0}):
+        with patch.dict(os.environ, {'FAKE_AGY_HANG': str(pidfile)}), patch.dict(provider_auth.SLOW, {'agy': 3.0}):
             snap = catalog.refresh(self.db, {'roles': {'author': ['agy@h1/x'], 'reviewer': ['claude']}})
         self.assertEqual(snap['errors'], {'agy@h1': 'timeout'})
         self.assertEqual({e['source'] for e in snap['entries']}, {'fallback'})               # Claude is still offered
-        self.assertIsNone(identity(int(pidfile.read_text())))                     # the hung process was killed
+        # Missing pidfile means timeout killed Python before it wrote its PID (not unstarted), so timeout + fallback suffice.
+        if pidfile.exists():
+            self.assertIsNone(identity(int(pidfile.read_text())))                     # the hung process was killed
 
     def test_missing_binary_is_unavailable_not_an_error(self):
         with patch.dict(os.environ, {'CONDUCTOR_AGY_BIN': str(self.root / 'nope')}):

@@ -4,6 +4,7 @@ import hashlib
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 # httpx + starlette TestClient — synchronous test harness for FastAPI
 try:
@@ -206,6 +207,81 @@ class ApiTests(unittest.TestCase):
         r = self.client.get("/health")
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json()["status"], "ok")
+
+    # ── static caching & lifespan shutdown ──────────────────────────────────────
+
+    def test_ui_static_no_cache_and_assets_immutable(self):
+        static_dir = self.root / "static_test"
+        assets_dir = static_dir / "assets"
+        assets_dir.mkdir(parents=True)
+        (static_dir / "index.html").write_text("<!doctype html><title>UI</title>", encoding="utf-8")
+        (static_dir / "manifest.webmanifest").write_text('{"name":"Conductor"}', encoding="utf-8")
+        (static_dir / "icon.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+        (assets_dir / "index-abc123.js").write_text("console.log('ok');\n", encoding="utf-8")
+
+        client = TestClient(create_app(static_dir=static_dir), raise_server_exceptions=True)
+
+        r_manifest = client.get("/ui/manifest.webmanifest")
+        self.assertEqual(r_manifest.status_code, 200)
+        self.assertEqual(r_manifest.headers.get("Cache-Control"), "no-cache")
+
+        r_304 = client.get(
+            "/ui/manifest.webmanifest",
+            headers={"If-None-Match": r_manifest.headers["etag"]},
+        )
+        self.assertEqual(r_304.status_code, 304)
+        self.assertEqual(r_304.headers.get("Cache-Control"), "no-cache")
+
+        r_png = client.get("/ui/icon.png")
+        self.assertEqual(r_png.status_code, 200)
+        self.assertEqual(r_png.headers.get("Cache-Control"), "no-cache")
+
+        r_asset = client.get("/assets/index-abc123.js")
+        self.assertEqual(r_asset.status_code, 200)
+        self.assertIn("immutable", r_asset.headers.get("Cache-Control", ""))
+
+    def test_lifespan_shutdown_stops_previews_when_db_connect_fails(self):
+        fail_connect = False
+
+        def connect_on_shutdown(*args, **kwargs):
+            if fail_connect:
+                raise RuntimeError("db connect failed during shutdown")
+            return s.connect(*args, **kwargs)
+
+        # Patch store on app.api only so worker_lifespan threads keep real app.store.connect.
+        api_store = MagicMock(wraps=s)
+        api_store.connect.side_effect = connect_on_shutdown
+
+        fake_proc_1 = MagicMock()
+        fake_proc_2 = MagicMock()
+
+        async def stop_side_effect(process, _owner):   # stop_process is async: an un-awaited call would stop nothing
+            if process is fake_proc_1:
+                raise OSError("process already exited")
+
+        app = create_app()
+        with patch("app.api.proc.stop_process", new=AsyncMock(side_effect=stop_side_effect)) as mock_stop, \
+             patch("app.api.store", api_store):
+            with TestClient(app, raise_server_exceptions=True):
+                app.state.preview_registry["/tmp/fake-ws-1"] = {
+                    "process": fake_proc_1,
+                    "owner": "owner-1",
+                }
+                app.state.preview_registry["/tmp/fake-ws-2"] = {
+                    "process": fake_proc_2,
+                }
+                fail_connect = True
+
+        self.assertEqual(api_store.connect.call_count, 2)
+        self.assertEqual(
+            mock_stop.call_args_list,
+            [
+                call(fake_proc_1, "owner-1"),
+                call(fake_proc_2, None),
+            ],
+        )
+        self.assertEqual(mock_stop.await_count, 2)   # actually awaited, not just called
+        self.assertEqual(app.state.preview_registry, {})
 
 
 if __name__ == "__main__":

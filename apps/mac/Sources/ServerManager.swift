@@ -24,7 +24,9 @@ class ServerManager: ObservableObject {
         request.timeoutInterval = 1.0
         
         let task = URLSession.shared.dataTask(with: request) { data, response, error in
-            let isRunning = (error == nil && (response as? HTTPURLResponse)?.statusCode == 200)
+            let isRunning = error == nil
+                && (response as? HTTPURLResponse)?.statusCode == 200
+                && data.map(isConductorHealth) == true
             
             DispatchQueue.main.async {
                 if isRunning != self.isServerRunning {

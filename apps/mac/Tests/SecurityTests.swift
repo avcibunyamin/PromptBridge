@@ -32,12 +32,26 @@ func testNavigation() {
     expectEqual(navigationDecision(for: URL(string: "http://127.0.0.1/"), frame: .sub), .cancel, "iframe without explicit port cancelled")
     expectEqual(navigationDecision(for: URL(string: "https://example.com/"), frame: .sub), .cancel, "external iframe cancelled, no browser")
     expectEqual(navigationDecision(for: URL(string: "about:blank"), frame: .sub), .allow, "blank iframe allowed")
-    // new window (target=_blank / window.open): the browser, never an in-app window
-    expectEqual(navigationDecision(for: URL(string: "http://127.0.0.1:5173/"), frame: .newWindow), .openExternally, "preview opens in browser")
-    expectEqual(navigationDecision(for: URL(string: "https://example.com/"), frame: .newWindow), .openExternally, "external new window opens in browser")
-    expectEqual(navigationDecision(for: URL(string: "file:///tmp/x.html"), frame: .newWindow), .cancel, "file new window cancelled")
-    expectEqual(navigationDecision(for: URL(string: "about:blank"), frame: .newWindow), .cancel, "blank new window cancelled")
+    // new window (target=_blank / window.open): only the panel may open the browser
+    expectEqual(navigationDecision(for: URL(string: "https://example.com/"), frame: .newWindow(fromPanel: false)), .cancel, "preview new window cancelled")
+    expectEqual(navigationDecision(for: URL(string: "http://127.0.0.1:5173/"), frame: .newWindow(fromPanel: true)), .openExternally, "panel http new window opens externally")
+    expectEqual(navigationDecision(for: URL(string: "https://example.com/"), frame: .newWindow(fromPanel: true)), .openExternally, "panel https new window opens externally")
+    expectEqual(navigationDecision(for: URL(string: "javascript:alert(1)"), frame: .newWindow(fromPanel: true)), .cancel, "javascript new window cancelled")
+    expectEqual(navigationDecision(for: URL(string: "data:text/html,hello"), frame: .newWindow(fromPanel: true)), .cancel, "data new window cancelled")
+    expectEqual(navigationDecision(for: URL(string: "file:///tmp/x.html"), frame: .newWindow(fromPanel: true)), .cancel, "file new window cancelled")
+    expectEqual(navigationDecision(for: URL(string: "about:blank"), frame: .newWindow(fromPanel: true)), .cancel, "blank new window cancelled")
+    expectEqual(navigationDecision(for: URL(string: "javascript:alert(1)"), frame: .main(userActivated: true)), .cancel, "javascript main frame cancelled")
+    expectEqual(navigationDecision(for: URL(string: "data:text/html,hello"), frame: .main(userActivated: true)), .cancel, "data main frame cancelled")
+    expectEqual(navigationDecision(for: URL(string: "javascript:alert(1)"), frame: .sub), .cancel, "javascript sub frame cancelled")
+    expectEqual(navigationDecision(for: URL(string: "data:text/html,hello"), frame: .sub), .cancel, "data sub frame cancelled")
     expectEqual(navigationDecision(for: nil, frame: .sub), .cancel, "missing URL cancelled")
+}
+
+func testConductorHealth() {
+    let realHealth = #"{"status":"ok","db":{},"version":{"commit":"abc","schema":"1.13","ui_bundle":"hash"}}"#.data(using: .utf8)!
+    expect(isConductorHealth(realHealth), "valid health response accepted")
+    expect(!isConductorHealth(Data(#"{"status":"ok"}"#.utf8)), "incomplete health response rejected")
+    expect(!isConductorHealth(Data("not json".utf8)), "malformed health response rejected")
 }
 
 func testBridgeOrigin() {
@@ -131,6 +145,7 @@ struct TestRunner {
     static func main() {
         do {
             testNavigation()
+            testConductorHealth()
             testBridgeOrigin()
             try testPathJavaScriptEncoding()
             testInstallRootValidationRejectsFakeRoot()

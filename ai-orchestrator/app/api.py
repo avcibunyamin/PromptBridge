@@ -33,6 +33,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import store
+from .adapters import process as proc
 from .security import ALLOWED_ORIGINS, mutation_guard
 from .errors import install_handlers
 from .routes import inbox_for
@@ -164,15 +165,25 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         try:
             yield
         finally:
-            conn = store.connect(db_path)
             try:
-                for workspace in list(app.state.preview_registry):
+                conn = store.connect(db_path)
+            except Exception:
+                log.exception("preview shutdown db connect failed; stopping processes directly")
+                for workspace, entry in list(app.state.preview_registry.items()):
                     try:
-                        await preview.stop(conn, workspace, app.state.preview_registry)
+                        await proc.stop_process(entry["process"], entry.get("owner"))
                     except Exception:
-                        log.exception("preview shutdown cleanup failed for %s", workspace)
-            finally:
-                conn.close()
+                        log.exception("preview shutdown direct stop failed for %s", workspace)
+                app.state.preview_registry.clear()
+            else:
+                try:
+                    for workspace in list(app.state.preview_registry):
+                        try:
+                            await preview.stop(conn, workspace, app.state.preview_registry)
+                        except Exception:
+                            log.exception("preview shutdown cleanup failed for %s", workspace)
+                finally:
+                    conn.close()
     log.info("Conductor API stopped")
 
 
@@ -440,8 +451,7 @@ def create_app(static_dir: Path | None = None) -> FastAPI:
     class _UIStaticFiles(StaticFiles):
         async def get_response(self, path: str, scope):
             resp = await super().get_response(path, scope)
-            ct = resp.headers.get("content-type", "") or (resp.media_type or "")
-            if ct.startswith("text/html"):
+            if resp.status_code in (200, 304):
                 resp.headers["Cache-Control"] = "no-cache"
             return resp
 

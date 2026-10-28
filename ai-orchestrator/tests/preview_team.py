@@ -78,6 +78,8 @@ async def populate():
 
 asyncio.run(populate())
 conn.close()
+if STATIC:   # the setup wizard's panel check looks for <root>/app/static/index.html
+    (root / 'app').mkdir(); (root / 'app/static').symlink_to(STATIC.resolve())
 new = root / 'new-work'; new.mkdir()
 print('DISPOSABLE_ROOT=' + str(root), flush=True)
 print('WORKSPACE_FOR_NEW=' + str(new), flush=True)

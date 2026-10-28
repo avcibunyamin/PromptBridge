@@ -288,6 +288,15 @@ def create_app(static_dir: Path | None = None) -> FastAPI:
                 "version": {"commit": commit, "schema": schema, "ui_bundle": bundle}}
 
 
+    @app.get("/api/setup/checks")
+    def setup_checks(request: Request):
+        if getattr(request.state, "conductor_mobile_device", None):
+            raise HTTPException(404, detail="not found")
+        from . import doctor
+        results = doctor.checks(_root(), server=False)
+        return {"checks": results, "ok": not any(item['level'] == 'FAIL' for item in results)}
+
+
     @app.get("/api/envelopes")
     def list_envelopes(state: str | None = None):
         conn = _get_conn()

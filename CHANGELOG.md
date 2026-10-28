@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-28
+
+### Added
+- Setup wizard (`#/setup`): each installation step with its status and a command to copy, a progress bar and a recheck button; it opens on a fresh install. Backed by `GET /api/setup/checks`, the same read-only checks as `python -m app doctor` (not available from the phone).
+- Team editor: reorder a chain's links by dragging the handle (or with ↑/↓ on it); the top link is the primary.
+
+### Changed
+- New look: translucent glass surfaces over a soft ambient background, a floating sidebar, smooth transitions and clickable cards that lift on hover. Motion turns off with the system's reduced-motion setting; browsers without backdrop blur get plain surfaces. No new dependencies.
+- Settings are split into tabs (team, accounts, models, appearance, integrations, phone); the tab is in the URL (`#/settings/<tab>`) and remembered.
+- Overview: clickable status cards with icons, relative times in recent works and a quick start card with recipes.
+- `doctor` shows Node.js's version without the install path.
+- README: a setup wizard section with screenshots.
+
+### Fixed
+- A run that timed out could refuse to stop its own process, and recovery could then release the folder lock while that process kept running: process identity now tolerates macOS's second-scale jitter in the reported boot time.
+
 ## [0.3.11] - 2026-10-28
 
 ### Security

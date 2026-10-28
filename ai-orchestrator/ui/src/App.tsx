@@ -1,16 +1,20 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { listEnvelopes, reconcile, type Envelope } from './api'
+import { listAccounts, listEnvelopes, listWorks, reconcile, type Envelope } from './api'
 import { WorkPanel } from './components/WorkPanel'
 import { OverviewPage } from './components/OverviewPage'
 import { HASHES, initialView, viewAfterHashChange, type View } from './views.ts'
-import { ChevronRight, FileCheck2, LayoutDashboard, MessagesSquare, RefreshCw, Settings2 } from 'lucide-react'
+import { ChevronRight, FileCheck2, LayoutDashboard, ListChecks, MessagesSquare, RefreshCw, Settings2 } from 'lucide-react'
 import { EnvelopeList } from './components/EnvelopeList'
 import { EnvelopeDetail } from './components/EnvelopeDetail'
 import { SettingsPage } from './components/SettingsPage'
+import { SetupWizard } from './components/SetupWizard'
 import { loadSettings, resolveTheme, saveSettings, type Theme } from './settings'
 import { PairScreen } from './components/PairScreen'
 import { canCommand, detectMode, events, loadToken, mobile, onUnauthorized, withAuth, type Mode } from './mobile'
 import { t } from './i18n'
+import { allDone, isSetupHidden, setupSteps, type SetupCatalog } from './setupRules'
+import { api } from './components/work/shared'
+import type { Catalog } from './components/work/team'
 
 type StateFilter = 'ALL' | 'PENDING_APPROVAL' | 'DELIVERED' | 'REJECTED' | 'FAILED'
 /** F3-06: what the server runs and serves (GET /health). */
@@ -31,11 +35,51 @@ export default function App() {
 }
 
 const PAGES: Record<View, string> = { overview: t('shell.nav.overview'), work: t('shell.nav.work'), bridge: t('shell.nav.bridge'), settings: t('shell.nav.settings') }
-const firstView = () => initialView(location.hash, matchMedia('(max-width: 600px)').matches)
+const settingsSubpath = (h: string) => h.startsWith('#/settings/') ? h.slice('#/settings/'.length) : ''
+const routeHash = (h: string) => h.startsWith('#/settings/') ? HASHES.settings : h
+const firstView = () => initialView(routeHash(location.hash), matchMedia('(max-width: 600px)').matches)
 
 function Shell() {
   const [view, setView] = useState<View>(firstView)
-  useEffect(() => { const on = () => { const v = viewAfterHashChange(location.hash, matchMedia('(max-width: 600px)').matches); if (v) setView(v) }; addEventListener('hashchange', on); return () => removeEventListener('hashchange', on) }, [])
+  const [setup, setSetup] = useState(() => location.hash === '#/setup')
+  const [setupNeeded, setSetupNeeded] = useState(false)
+  const [settingsSub, setSettingsSub] = useState(() => settingsSubpath(location.hash))
+  useEffect(() => { const on = () => {
+    if (location.hash === '#/setup') { setSetup(true); return }
+    setSetup(false); setSettingsSub(settingsSubpath(location.hash))
+    const v = viewAfterHashChange(routeHash(location.hash), matchMedia('(max-width: 600px)').matches); if (v) setView(v)
+  }; addEventListener('hashchange', on); return () => removeEventListener('hashchange', on) }, [])
+  useEffect(() => {
+    if (mobile.active) return
+    let cancelled = false
+    const checkSetup = async () => {
+      const [accounts, catalog, settings, works] = await Promise.allSettled([
+        listAccounts(), api<Catalog>('/api/sessions/catalog'), loadSettings(), listWorks(false),
+      ])
+      if (cancelled) return
+      const steps = setupSteps({
+        accounts: accounts.status === 'fulfilled' ? accounts.value.accounts : null,
+        catalog: catalog.status === 'fulfilled' ? catalog.value as SetupCatalog : null,
+        settings: settings.status === 'fulfilled' ? settings.value : null,
+        workCount: works.status === 'fulfilled' ? works.value.items.length : 0,
+        errors: { cli: accounts.status === 'rejected', auth: catalog.status === 'rejected',
+          team: settings.status === 'rejected', work: works.status === 'rejected' },
+      })
+      // Same steps as the wizard: a saved default team is optional (providers.yaml's chain applies without one).
+      const required = steps.filter(s => s.key !== 'team')
+      setSetupNeeded(!allDone(required))
+      if (!location.hash && !isSetupHidden() && works.status === 'fulfilled' && works.value.items.length === 0 && !allDone(required)) {
+        try {
+          if (localStorage.getItem('pb.setupWizardSeen') !== '1') {
+            localStorage.setItem('pb.setupWizardSeen', '1')
+            location.hash = '#/setup'
+          }
+        } catch { /* Storage may be unavailable; the current launch still opens the wizard. */ location.hash = '#/setup' }
+      }
+    }
+    void checkSetup()
+    return () => { cancelled = true }
+  }, [])
   const [version, setVersion] = useState<Version | null>(null)
   useEffect(() => {
     fetch('/health', withAuth()).then(r => r.json()).then(h => setVersion(h.version ?? null)).catch(() => setVersion(null))
@@ -62,9 +106,10 @@ function Shell() {
     const load = () => void listEnvelopes('PENDING_APPROVAL').then(e => setWaiting(e.length)).catch(() => {})
     load(); const t = setInterval(load, 15000); return () => clearInterval(t)
   }, [])
-  const open = (v: View, hash: string = v === 'work' ? '#/' : HASHES[v]) => { setView(v); if (location.hash !== hash) location.hash = hash }
+  const open = (v: View, hash: string = v === 'work' ? '#/' : HASHES[v]) => { setView(v); setSettingsSub(settingsSubpath(hash)); if (location.hash !== hash) location.hash = hash }
+  const openSetup = () => { setSetup(true); if (location.hash !== '#/setup') location.hash = '#/setup' }
   const item = (v: View, icon: JSX.Element, extra?: JSX.Element) =>
-    <button className="nav-item" aria-current={view === v ? 'page' : undefined} onClick={() => open(v)}>{icon}{PAGES[v]}{extra}</button>
+    <button className="nav-item" aria-current={!setup && view === v ? 'page' : undefined} onClick={() => open(v)}>{icon}{PAGES[v]}{extra}</button>
   const head = <>
     <div className="brand side-brand"><img className="mark" src="/ui/logo.svg" alt="" width={24} height={24} />PromptBridge</div>
     {/* K-040: ZeroCost's desktop sidebar — where it runs, then the control centre's sections, then recent works */}
@@ -79,10 +124,13 @@ function Shell() {
       {item('work', <MessagesSquare aria-hidden />)}
       {item('bridge', <FileCheck2 aria-hidden />, waiting ? <span className="nav-count">{waiting}</span> : undefined)}
       {item('settings', <Settings2 aria-hidden />)}
+      {!mobile.active && <button className="nav-item" aria-current={setup ? 'page' : undefined} onClick={openSetup}>
+        <ListChecks aria-hidden />{t('shell.wizard.open')}{setupNeeded && <span className="setup-nav-dot" aria-label={t('shell.wizard.incomplete')} />}
+      </button>}
     </nav>
   </>
   const top = <header className="topbar d-only">
-    <div className="crumbs"><span>{t('shell.nav.controlCenter')}</span><ChevronRight aria-hidden /><strong>{PAGES[view]}</strong></div>
+    <div className="crumbs"><span>{t('shell.nav.controlCenter')}</span><ChevronRight aria-hidden /><strong>{setup ? t('shell.wizard.open') : PAGES[view]}</strong></div>
     <div className="topbar-right">
       <span className={'status-dot' + (version ? ' online' : '')} aria-hidden /><span role="status">{version ? t('shell.host.connected') : t('shell.host.waiting')}</span>
       <span className="top-divider" aria-hidden />
@@ -101,9 +149,10 @@ function Shell() {
   </nav>
   return <div className="product-shell">
     <WorkPanel head={head} foot={foot} top={top} onOpen={() => setView('work')}
-      override={view === 'overview' ? <OverviewPage onOpenWork={id => open('work', `#/works/${encodeURIComponent(id)}`)}
+      override={setup ? <SetupWizard onOverview={() => { setSetup(false); open('overview') }} onSettings={() => { setSetup(false); open('settings') }} onNewWork={() => { setSetup(false); open('work', '#/new') }} />
+        : view === 'overview' ? <OverviewPage onOpenWork={id => open('work', `#/works/${encodeURIComponent(id)}`)}
           onNewWork={() => open('work', '#/new')} onApprovals={() => open('bridge')} onSettings={() => open('settings')} />
-        : view === 'bridge' ? <BridgePanel /> : view === 'settings' ? <SettingsPage onTheme={setTheme} /> : null} />
+        : view === 'bridge' ? <BridgePanel /> : view === 'settings' ? <SettingsPage subpath={settingsSub} onTheme={setTheme} /> : null} />
   </div>
 }
 

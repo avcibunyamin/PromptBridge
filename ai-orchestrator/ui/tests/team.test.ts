@@ -1,7 +1,7 @@
 // TB-10: identities and the provider/account → model → effort options of one chain link.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { agyFamilyLabel, agyGroups, agyName, agyParts, linkMissing, baseOf, covers, effortLabel, joinId, linkOptions, modelLabel, splitId, type Cap, type Catalog } from '../src/components/work/team.ts'
+import { agyFamilyLabel, agyGroups, agyName, agyParts, linkMissing, baseOf, covers, effortLabel, joinId, linkOptions, modelLabel, moveLink, splitId, type Cap, type Catalog } from '../src/components/work/team.ts'
 
 const CLAUDE: Cap = { models: true, model_required: false, efforts: ['low', 'medium', 'high', 'xhigh', 'max'] }
 const AGY: Cap = { models: true, model_required: true, efforts: [] }
@@ -148,4 +148,19 @@ test('K-041 review: a live list without efforts asks for none; backups and switc
   const agy = linkOptions(['agy@h1'], { ...catalog, entries: [entry('agy@h1/foo'), entry('agy@h1/foo-high')] }, capOf)
   assert.equal(linkMissing('agy@h1/foo', agy), 'effort')                              // a family with efforts needs one
   assert.equal(linkMissing('agy@h1/foo-high', agy), null)
+})
+
+test('moveLink reorders links cleanly and never mutates the input chain', () => {
+  const input = ['a', 'b', 'c']
+  assert.deepEqual(moveLink(input, 2, 0), ['c', 'a', 'b'])
+  assert.deepEqual(moveLink(input, 0, 2), ['b', 'c', 'a'])
+  const same = moveLink(input, 1, 1)
+  assert.deepEqual(same, ['a', 'b', 'c'])
+  assert.notEqual(same, input)
+  for (const [from, to] of [[-1, 0], [0, -1], [3, 0], [0, 3], [-1, 5]]) {
+    const copy = moveLink(input, from, to)
+    assert.deepEqual(copy, ['a', 'b', 'c'])
+    assert.notEqual(copy, input)
+  }
+  assert.deepEqual(input, ['a', 'b', 'c'])
 })

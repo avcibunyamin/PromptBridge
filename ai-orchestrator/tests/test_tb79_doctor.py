@@ -9,6 +9,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from fastapi.testclient import TestClient
+
 from app import cli, doctor
 from app.provider_policy import CAPABILITIES
 
@@ -124,6 +126,38 @@ class DoctorTests(unittest.TestCase):
                 lines = []
                 self.assertEqual(doctor.run(self.root, out=lines.append), 0)
                 self.assertTrue(any(l.startswith('OK   node') for l in lines), lines)
+
+    def test_checks_returns_structured_results_without_server_probe(self):
+        self._install()
+        self._ready_root()
+        results = doctor.checks(self.root, server=False)
+        self.assertTrue(results)
+        self.assertTrue(all(set(item) == {'key', 'level', 'detail'} for item in results))
+        self.assertFalse(any(item['key'] == 'server' for item in results))
+
+    def test_setup_checks_endpoint_and_mobile_gate(self):
+        from app.api import create_app
+
+        expected = [{'key': 'python', 'level': 'OK', 'detail': '3.12.0'}]
+        app = create_app(static_dir=self.root)
+        with mock.patch('app.doctor.checks', return_value=expected) as check_mock:
+            client = TestClient(app)
+            response = client.get('/api/setup/checks')
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json(), {'checks': expected, 'ok': True})
+            check_mock.assert_called_once_with(mock.ANY, server=False)
+
+            class MobileState:
+                def __init__(self, inner):
+                    self.inner = inner
+
+                async def __call__(self, scope, receive, send):
+                    if scope['type'] == 'http':
+                        scope.setdefault('state', {})['conductor_mobile_device'] = 'phone'
+                    await self.inner(scope, receive, send)
+
+            mobile_client = TestClient(MobileState(app))
+            self.assertEqual(mobile_client.get('/api/setup/checks').status_code, 404)
 
     def test_serve_loopback_host_only(self):
         from app import quota

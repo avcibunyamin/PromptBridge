@@ -117,3 +117,12 @@ export function linkOptions(entries:string[], catalog:Catalog|null, capOf:(id:st
   }
   return {bases,modelsFor,effortsFor,defaultEffortFor,ready,firstOf,nextLink}
 }
+
+/** Reorder one role's chain without mutating `chain`; equal or out-of-bounds indices return a shallow copy. */
+export function moveLink<T>(chain: T[], from: number, to: number): T[] {
+  const next = [...chain]
+  if (from === to || !Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to < 0 || from >= next.length || to >= next.length) return next
+  const removed = next.splice(from, 1)
+  next.splice(to, 0, ...removed)
+  return next
+}

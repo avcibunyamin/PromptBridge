@@ -12,7 +12,7 @@ from starlette.testclient import TestClient
 from app import store, runner_store as repo
 from app.api import create_app
 from app.adapters import process as P
-from app.adapters.process import reap_owned, spawn_owned, release_gate, group_exists
+from app.adapters.process import reap_owned, spawn_owned, release_gate, group_exists, same_boot, same_identity
 
 
 class Sim:
@@ -143,6 +143,40 @@ class ReaperTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(group_exists(owner['pgid']))
         with contextlib.suppress(Exception):
             await asyncio.wait_for(proc.wait(), 2)
+
+    def test_same_identity_boot_time_tolerance(self):
+        base = ident(707, start=100.0, boot=1000.0)
+        self.assertTrue(same_identity(base, ident(707, start=100.0, boot=1001.0)))
+        self.assertFalse(same_identity(base, ident(707, start=100.0, boot=4600.0)))
+        self.assertFalse(same_boot(None, 1000.0))
+        self.assertFalse(same_boot(1000.0, None))
+
+    async def test_real_orphan_reaped_with_1s_boot_time_drift(self):
+        tmp = tempfile.TemporaryDirectory(); self.addCleanup(tmp.cleanup)
+        proc, owner, gate = await spawn_owned([sys.executable, '-c', 'import time;time.sleep(30)'], tmp.name)
+        try:
+            release_gate(gate)
+            await asyncio.sleep(0.2)
+            self.assertTrue(group_exists(owner['pgid']))
+            shifted = {k: owner[k] for k in ('pid', 'pgid', 'start_time', 'boot_time')}
+            shifted['boot_time'] -= 1.0
+            proof = await reap_owned(shifted)
+            self.assertNotEqual(proof.get('reason'), 'boot_time_changed')
+            self.assertEqual((proof['result'], proof['ok']), ('reaped', True))
+            self.assertFalse(group_exists(owner['pgid']))
+        finally:
+            with contextlib.suppress(Exception):
+                os.killpg(owner['pgid'], signal.SIGKILL)
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(proc.wait(), 2)
+
+    async def test_boot_time_3600s_drift_is_boot_time_changed(self):
+        owner = ident(708, boot=1000.0)
+        sim = Sim(boot=4600.0, leader_identity=ident(708, boot=4600.0), members=[ident(708, boot=4600.0)])
+        with world(sim):
+            proof = await reap_owned(owner, [])
+        self.assertEqual((proof['result'], proof['reason'], proof['ok']), ('dead', 'boot_time_changed', True))
+        self.assertEqual(sim.calls, [])
 
 
 class RecoveryEndpointTests(unittest.TestCase):

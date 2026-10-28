@@ -1,0 +1,148 @@
+/* Glass layer: translucent surfaces, ambient background and motion.
+   Loaded after main.css and only restyles existing class names; tokens live in conductor.css :root.
+   Pure CSS: no new dependencies, no markup changes. */
+
+/* ---------- 1. Ambient background ---------- */
+/* Surfaces that used to paint the page colour become transparent so the blobs show through. */
+.product-shell,.body,.main,.app,.app-body,.detail-pane,.pair-screen{background:transparent}
+body::before{
+  content:"";position:fixed;inset:-20vmax;z-index:-1;pointer-events:none;
+  background:
+    radial-gradient(38vmax 38vmax at 22% 24%,color-mix(in srgb,var(--accent) var(--blob),transparent),transparent 70%),
+    radial-gradient(34vmax 34vmax at 80% 30%,color-mix(in srgb,var(--accent-2) var(--blob),transparent),transparent 70%),
+    radial-gradient(44vmax 44vmax at 55% 86%,color-mix(in srgb,var(--accent) calc(var(--blob) * .7),transparent),transparent 70%);
+  animation:ambient-drift 52s ease-in-out infinite alternate;
+  will-change:transform;
+}
+@keyframes ambient-drift{
+  0%{transform:translate3d(0,0,0) scale(1)}
+  50%{transform:translate3d(3vmax,-2vmax,0) scale(1.06)}
+  100%{transform:translate3d(-2vmax,3vmax,0) scale(1)}
+}
+
+/* ---------- 2. Glass surfaces ---------- */
+/* .composer and .modal float over moving text, so they use the stronger (more opaque) glass. */
+.card,.host-card,.panel,.stat-card,.topbar{
+  background:var(--glass);
+  -webkit-backdrop-filter:blur(var(--blur)) saturate(140%);
+  backdrop-filter:blur(var(--blur)) saturate(140%);
+  border:1px solid var(--glass-border);
+  border-radius:var(--r-lg);
+}
+.card,.panel,.stat-card{box-shadow:var(--glass-shadow)}
+.panel.accent{background:color-mix(in srgb,var(--accent-soft) 40%,var(--glass))}
+.composer,.modal{
+  background:var(--glass-strong);
+  -webkit-backdrop-filter:blur(var(--blur)) saturate(140%);
+  backdrop-filter:blur(var(--blur)) saturate(140%);
+  border:1px solid var(--glass-border);
+}
+.composer{box-shadow:var(--glass-shadow)}           /* keeps its own, rounder radius from main.css */
+.modal{border-radius:var(--r-lg);box-shadow:var(--glass-shadow),0 24px 60px -20px rgba(0,0,0,.45)}
+dialog.modal::backdrop{-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px)}
+.modal-backdrop{-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px)}
+
+/* ---------- 3. Desktop shell: floating sidebar + floating top bar ---------- */
+@media(min-width:601px){
+  .sidebar{
+    margin:12px;border:1px solid var(--glass-border);border-radius:var(--r-lg);
+    background:var(--glass);box-shadow:var(--glass-shadow);
+    -webkit-backdrop-filter:blur(var(--blur)) saturate(140%);
+    backdrop-filter:blur(var(--blur)) saturate(140%);
+  }
+  .side-nav{border-top-color:var(--glass-border)}
+  .topbar{top:12px;margin:12px 12px 0 0;box-shadow:var(--glass-shadow)}
+
+  /* nav items: soft hover, glass pill + thin accent bar when active */
+  .nav-item{position:relative;transition:background-color var(--dur) var(--ease),color var(--dur) var(--ease),box-shadow var(--dur) var(--ease)}
+  .nav-item::before{
+    content:"";position:absolute;left:4px;top:50%;width:3px;height:56%;border-radius:3px;background:var(--accent);
+    opacity:0;transform:translateY(-50%) scaleY(0);
+    transition:transform var(--dur-slow) var(--ease),opacity var(--dur) var(--ease);
+  }
+  .nav-item:hover{background:color-mix(in srgb,var(--inset) 75%,transparent);color:var(--ink)}
+  .nav-item[aria-current=page]{
+    background:color-mix(in srgb,var(--accent-soft) 70%,var(--glass-strong));color:var(--accent);
+    box-shadow:inset 0 0 0 1px var(--glass-border),var(--shadow-sm);
+  }
+  .nav-item[aria-current=page]::before{opacity:1;transform:translateY(-50%) scaleY(1)}
+}
+
+/* ---------- 4. Segmented controls and tab bars: animated active background ---------- */
+.side-filter,.tab-bar,.seg{background:color-mix(in srgb,var(--inset) 70%,transparent);border-radius:12px}
+.side-filter button,.tab-btn,.seg button,.filter-btn,.side-nav>button,.session,.session-row,.recent button,.icon-btn,.newwork{
+  transition:background-color var(--dur) var(--ease),color var(--dur) var(--ease),box-shadow var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),transform var(--dur) var(--ease);
+}
+.side-filter button{border-radius:9px}
+.side-filter button[aria-pressed=true],.tab-btn.active,.seg button.on{
+  background:var(--glass-strong);color:var(--ink);box-shadow:inset 0 0 0 1px var(--glass-border),var(--shadow-sm);
+}
+
+/* ---------- 5. Motion ---------- */
+.card,.panel,.stat-card{transition:transform var(--dur) var(--ease),box-shadow var(--dur) var(--ease),border-color var(--dur) var(--ease)}
+.btn{transition:background-color var(--dur) var(--ease),border-color var(--dur) var(--ease),color var(--dur) var(--ease),
+  box-shadow var(--dur) var(--ease),filter var(--dur) var(--ease),transform var(--dur) var(--ease)}
+.btn:hover:not(:disabled){filter:brightness(1.06)}
+.btn:active:not(:disabled){transform:scale(.98)}
+/* Lift on hover only where a real pointer hovers (no sticky hover on touch screens). */
+@media(hover:hover){
+  /* Only clickable cards lift; a settings or form card stays put under the pointer and just glows. */
+  .card:hover{box-shadow:var(--glass-shadow),var(--shadow)}
+  a.card:hover,button.card:hover,.card.as-button:hover,.stat-card.as-button:hover{transform:translateY(-3px);box-shadow:var(--glass-shadow),var(--shadow)}
+  .session:hover{box-shadow:var(--shadow)}
+  /* Work-list items: lift the whole .session-row so its sibling "⋯" button (.session-more) moves along
+     and hovering that button keeps the lift. The raised z-index keeps an open .work-menu above later rows
+     while the transform makes the row its own stacking context. */
+  .session-row:hover{transform:translateY(-3px);z-index:3}
+  :not(.session-row)>.session:hover{transform:translateY(-3px)}
+}
+/* Page content rises in. Fill mode "backwards" leaves no transform behind afterwards,
+   so sticky/fixed descendants (composer, bottom sheet) keep their normal containing block. */
+@keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.pane,.main>*,.detail-pane>*{animation:rise 240ms var(--ease) backwards}
+@keyframes modal-in{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
+@keyframes backdrop-in{from{opacity:0}to{opacity:1}}
+dialog.modal[open],.modal-backdrop>.modal{animation:modal-in var(--dur-slow) var(--ease) backwards}
+dialog.modal[open]::backdrop,.modal-backdrop{animation:backdrop-in 240ms ease-out backwards}
+
+/* ---------- 6. Focus rings stay visible on every surface ---------- */
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* Items inside scrolling lists draw the ring inside, so the list's overflow cannot clip it. */
+.nav-item:focus-visible,.session:focus-visible,.side-filter button:focus-visible,.tab-btn:focus-visible,
+.seg button:focus-visible,.filter-btn:focus-visible,.side-nav>button:focus-visible,.recent button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+
+/* ---------- 7. Phone (<=600px) ---------- */
+@media(max-width:600px){
+  :root{--blur:12px}
+  /* The sidebar contains the fixed bottom tab bar (.side-nav); a backdrop-filter on the sidebar would
+     become that bar's containing block and pin it inside the sidebar, so the sidebar gets tint only. */
+  .sidebar{background:var(--glass-strong);-webkit-backdrop-filter:none;backdrop-filter:none}
+  .side-nav{
+    background:var(--glass-strong);border-top-color:var(--glass-border);
+    -webkit-backdrop-filter:blur(var(--blur)) saturate(140%);
+    backdrop-filter:blur(var(--blur)) saturate(140%);
+  }
+  .side-nav>button[aria-current=page]{box-shadow:inset 0 0 0 1px var(--glass-border)}
+  /* Same reason for the composer: its usage bottom sheet is position:fixed. The blur moves to a
+     pseudo-element so the composer itself never becomes a containing block. */
+  .composer{background:transparent;isolation:isolate;-webkit-backdrop-filter:none;backdrop-filter:none}
+  .composer::before{
+    content:"";position:absolute;inset:0;z-index:-1;border-radius:inherit;pointer-events:none;
+    background:var(--glass-strong);
+    -webkit-backdrop-filter:blur(var(--blur)) saturate(140%);
+    backdrop-filter:blur(var(--blur)) saturate(140%);
+  }
+}
+
+/* ---------- 8. No backdrop-filter support: plain surfaces ---------- */
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  .card,.host-card,.panel,.stat-card,.topbar,.composer,.modal,.sidebar,.side-nav,.composer::before{background:var(--surface)}
+  .panel.accent{background:color-mix(in srgb,var(--accent-soft) 45%,var(--surface))}
+}
+
+/* ---------- 9. Reduced motion: no animation, no transition, no hover movement ---------- */
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+  .card:hover,.stat-card.as-button:hover,.session:hover,.session-row:hover,.btn:hover,.btn:active,a.card:hover,button.card:hover,.card.as-button:hover{transform:none!important}
+}

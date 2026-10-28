@@ -48,6 +48,12 @@ export interface EnvelopeDetail {
   history: HistoryEntry[]
 }
 
+export type SetupCheck = { key: string; level: 'OK' | 'WARN' | 'FAIL'; detail: string }
+export type SetupChecks = { checks: SetupCheck[]; ok: boolean }
+export async function setupChecks(): Promise<SetupChecks> {
+  return (await _fetch('/api/setup/checks')).json()
+}
+
 /** An HTTP answer from the server (the request definitely arrived). Network failures stay plain errors. */
 export class ApiError extends Error {
   status: number

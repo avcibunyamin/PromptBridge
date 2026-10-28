@@ -62,10 +62,24 @@ All commands after step 1 run inside `ai-orchestrator/`.
    .venv/bin/python -m app serve
    ```
    A `server not running` `WARN` from `doctor` before starting the server is normal. If the port is busy, use `.venv/bin/python -m app serve --port <PORT>`; see `.venv/bin/python -m app --help` for all commands.
-7. **Open <http://127.0.0.1:8765/ui/>.** The first-run guide on the overview page walks you through the rest; before your first work, check session status under **Settings → Accounts**.
+7. **Open <http://127.0.0.1:8765/ui/>.** On a fresh install the **setup wizard** (`#/setup`, also in the sidebar as **Setup**) opens and checks each step for you; before your first work, check session status under **Settings → Accounts**.
 8. **Optional — auto-start on macOS:** stop the foreground `serve` with `Ctrl-C` first (same port), then run `deploy/launchd.sh install`. Stop it with `deploy/launchd.sh uninstall`; a plain `kill` is restarted by launchd.
 
 Optional native Mac app: `cd ../apps/mac && make install` (see [apps/mac/README.md](apps/mac/README.md)).
+
+---
+
+## Setup wizard
+
+The panel checks your installation with the same checks as `python -m app doctor` (read-only, no provider calls) and shows each step with its status and a command to copy.
+
+![Setup wizard: Python, providers.yaml, provider CLIs, sign-in, panel and first work, each with its status](docs/images/setup-wizard.png)
+
+| Overview | Settings |
+|---|---|
+| ![Overview with clickable status cards, recent works and a quick start](docs/images/panel-overview.png) | ![Settings split into tabs: team, accounts, models, appearance, integrations, phone](docs/images/settings-tabs.png) |
+
+<sub>Screens from a test fixture with fake providers. Light and dark themes follow your system or **Settings → Appearance**.</sub>
 
 ---
 

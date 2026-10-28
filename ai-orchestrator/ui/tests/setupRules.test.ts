@@ -5,6 +5,8 @@ import {
   allDone,
   hideSetup,
   isSetupHidden,
+  doctorStatus,
+  doctorWizardStatuses,
   setupSteps,
   type SetupAccount,
   type SetupCatalog,
@@ -175,4 +177,21 @@ test('pb.setupHidden localStorage yardımcıları hata fırlatmadan çalışır'
   }
   assert.equal(isSetupHidden(throwingStorage), false)
   assert.doesNotThrow(() => hideSetup(throwingStorage))
+})
+
+test('doctor denetimleri kurulum sihirbazı durumlarına eşlenir', () => {
+  const checks = [
+    { key: 'python', level: 'OK' as const, detail: '3.12' },
+    { key: 'providers', level: 'FAIL' as const, detail: 'missing' },
+    { key: 'cli:claude', level: 'OK' as const, detail: 'installed' },
+    { key: 'cli:codex', level: 'FAIL' as const, detail: 'missing' },
+    { key: 'panel', level: 'OK' as const, detail: 'built' },
+    { key: 'node', level: 'WARN' as const, detail: 'old' },
+  ]
+  assert.equal(doctorStatus(checks, 'python'), 'complete')
+  assert.equal(doctorStatus(checks, 'providers'), 'missing')
+  assert.equal(doctorStatus(checks, 'server'), 'checking')
+  assert.deepEqual(doctorWizardStatuses(checks), {
+    python: 'complete', providers: 'missing', clis: 'missing', panel: 'complete', node: 'warning',
+  })
 })

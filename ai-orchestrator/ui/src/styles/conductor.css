@@ -7,9 +7,15 @@
   --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
   /* K-037: ZeroCost palette — sage-tinted grays, one sage-green accent */
   --bg:#f7f9f8; --surface:#ffffff; --surface-2:#fbfcfb; --inset:#f0f5f1;
-  --ink:#28312f; --muted:#5e6962; --faint:#66716a;
+  /* muted/faint stay >= 4.5:1 on white and on the tinted glass over the ambient blobs */
+  --ink:#28312f; --muted:#525d56; --faint:#58635c;
   --border:#e3e9e4; --border-strong:#d3dcd6;
-  --accent:#36745c; --accent-ink:#fff; --accent-soft:#eaf3ee;
+  --accent:#1b7050; --accent-ink:#fff; --accent-soft:#e4f3eb; --accent-2:#1f6f99;
+  /* glass surfaces + motion (glass.css) */
+  --glass:rgba(255,255,255,.62); --glass-strong:rgba(255,255,255,.88); --glass-border:rgba(255,255,255,.72);
+  --glass-shadow:0 0 0 1px rgba(27,70,52,.10),0 10px 30px -14px rgba(27,70,52,.22);
+  --blob:14%;
+  --blur:18px; --r-lg:18px; --ease:cubic-bezier(.2,.8,.2,1); --dur:180ms; --dur-slow:420ms;
   --author:#7c5322; --author-soft:#f3ece0;
   --reviewer:#4f6b80; --reviewer-soft:#e7eef2;
   --ok:#336b56; --ok-soft:#eaf5ec;
@@ -25,7 +31,10 @@
   --bg:#151a18; --surface:#1c2220; --surface-2:#212825; --inset:#121614;
   --ink:#e7ede9; --muted:#9ba8a0; --faint:#8d9b93;
   --border:#2a3330; --border-strong:#38443f;
-  --accent:#6db394; --accent-ink:#0d1a14; --accent-soft:#1f3229;
+  --accent:#5fc79a; --accent-ink:#0d1a14; --accent-soft:#1c3529; --accent-2:#5cc3d9;
+  --glass:rgba(24,30,28,.55); --glass-strong:rgba(28,35,32,.86); --glass-border:rgba(255,255,255,.08);
+  --glass-shadow:0 1px 0 rgba(255,255,255,.04) inset,0 14px 36px -16px rgba(0,0,0,.7);
+  --blob:18%;
   --author:#d4a063; --author-soft:#3a2f2299;
   --reviewer:#a3b8c8; --reviewer-soft:#2a333a99;
   --ok:#7dbf9c; --ok-soft:#1f302733; --run:#8fa9cc; --run-soft:#26303c;
@@ -39,7 +48,10 @@
   --bg:#151a18; --surface:#1c2220; --surface-2:#212825; --inset:#121614;
   --ink:#e7ede9; --muted:#9ba8a0; --faint:#8d9b93;
   --border:#2a3330; --border-strong:#38443f;
-  --accent:#6db394; --accent-ink:#0d1a14; --accent-soft:#1f3229;
+  --accent:#5fc79a; --accent-ink:#0d1a14; --accent-soft:#1c3529; --accent-2:#5cc3d9;
+  --glass:rgba(24,30,28,.55); --glass-strong:rgba(28,35,32,.86); --glass-border:rgba(255,255,255,.08);
+  --glass-shadow:0 1px 0 rgba(255,255,255,.04) inset,0 14px 36px -16px rgba(0,0,0,.7);
+  --blob:18%;
   --author:#d4a063; --author-soft:#3a2f2299;
   --reviewer:#a3b8c8; --reviewer-soft:#2a333a99;
   --ok:#7dbf9c; --ok-soft:#1f302733; --run:#8fa9cc; --run-soft:#26303c;
@@ -212,8 +224,21 @@ dialog.modal::backdrop{background:rgba(8,10,18,.55)}
 
 /* TB-10: one chain link = provider/account, model and effort side by side */
 .team-link{display:grid;grid-template-columns:minmax(170px,1.1fr) minmax(210px,1.35fr) minmax(140px,.75fr) auto;gap:8px;align-items:end;width:100%;padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2);margin-bottom:8px}
+.team-link:has(.drag-handle){grid-template-columns:auto minmax(170px,1.1fr) minmax(210px,1.35fr) minmax(140px,.75fr) auto}
+.team-link.dragging{opacity:.5}
+.team-link.drop-target{outline:2px dashed var(--accent);outline-offset:2px}
 .team-link label{display:flex;flex-direction:column;gap:4px;min-width:0}.team-link select{min-width:0}
-.remove-link{width:34px;height:34px;align-self:end;box-shadow:none;background:var(--surface)}.remove-link svg{width:15px;height:15px}
+.remove-link,.drag-handle{width:34px;height:34px;align-self:end;box-shadow:none;background:var(--surface)}.remove-link svg,.drag-handle svg{width:15px;height:15px}
+.drag-handle{cursor:grab}.drag-handle:active{cursor:grabbing}
 .add-link{justify-self:start;margin-top:2px}
-@media(max-width:820px){.team-link{grid-template-columns:1fr 1fr}.team-link .remove-link{justify-self:end}}
-@media(max-width:560px){.team-link{grid-template-columns:1fr}.team-link .remove-link{justify-self:start}}
+@media(max-width:820px){
+  .team-link{grid-template-columns:1fr 1fr}.team-link .remove-link{justify-self:end}
+  .team-link:has(.drag-handle){grid-template-columns:auto 1fr 1fr}
+  .team-link:has(.drag-handle) label:nth-of-type(3){grid-column:2}
+  .team-link:has(.drag-handle) .remove-link{grid-column:3}
+}
+@media(max-width:560px){
+  .team-link{grid-template-columns:1fr}.team-link .remove-link{justify-self:start}
+  .team-link:has(.drag-handle){grid-template-columns:auto 1fr}
+  .team-link:has(.drag-handle) label,.team-link:has(.drag-handle) .remove-link{grid-column:2}
+}

@@ -62,10 +62,24 @@
    .venv/bin/python -m app serve
    ```
    Sunucu çalışmadan önce `doctor` çıktısında `server not running` `WARN` uyarısı görülmesi normaldir. Port doluysa `.venv/bin/python -m app serve --port <PORT>` kullanabilirsiniz; tüm komutlar için `.venv/bin/python -m app --help` çalıştırın.
-7. **<http://127.0.0.1:8765/ui/> adresini açın.** Genel bakış sayfasındaki ilk çalıştırma rehberi geri kalan adımlarda yol gösterir; ilk çalışmadan önce **Settings → Accounts** altından oturum durumunu denetleyin.
+7. **<http://127.0.0.1:8765/ui/> adresini açın.** Yeni kurulumda **kurulum sihirbazı** (`#/setup`, kenar çubuğunda **Kurulum**) açılır ve her adımı sizin için denetler; ilk çalışmadan önce **Ayarlar → Hesaplar** altından oturum durumunu denetleyin.
 8. **İsteğe bağlı — macOS'ta otomatik başlatma:** `launchd` kurmadan önce ön plandaki `serve` sürecini `Ctrl-C` ile durdurun (aynı port), ardından `deploy/launchd.sh install` çalıştırın. Durdurmak için `deploy/launchd.sh uninstall` kullanın; düz `kill` sonrası süreç `launchd` tarafından yeniden başlatılır.
 
 İsteğe bağlı yerel Mac uygulaması: `cd ../apps/mac && make install` (bkz. [apps/mac/README.md](apps/mac/README.md)).
+
+---
+
+## Kurulum sihirbazı
+
+Panel kurulumunuzu `python -m app doctor` ile aynı denetimlerle (salt okur, sağlayıcı çağrısı yok) denetler ve her adımı durumu ve kopyalanabilir komutuyla gösterir.
+
+![Kurulum sihirbazı: Python, providers.yaml, sağlayıcı CLI'ları, oturum açma, panel ve ilk çalışma, her biri durumuyla](docs/images/setup-wizard.png)
+
+| Genel bakış | Ayarlar |
+|---|---|
+| ![Tıklanabilir durum kartları, son çalışmalar ve hızlı başlangıç ile genel bakış](docs/images/panel-overview.png) | ![Sekmelere bölünmüş ayarlar: takım, hesaplar, modeller, görünüm, entegrasyonlar, telefon](docs/images/settings-tabs.png) |
+
+<sub>Görüntüler sahte sağlayıcılı test fikstüründen. Aydınlık ve koyu tema sisteminizi ya da **Ayarlar → Görünüm**'ü izler.</sub>
 
 ---
 

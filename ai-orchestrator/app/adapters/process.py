@@ -27,8 +27,19 @@ def identity(pid):
         return None
 
 
+# psutil.boot_time() jitters at second scale on macOS; a real reboot shifts it by minutes/hours.
+BOOT_TOLERANCE = 5.0
+
+
+def same_boot(a, b) -> bool:
+    if a is None or b is None:
+        return False
+    return abs(float(a) - float(b)) <= BOOT_TOLERANCE
+
+
 def same_identity(a, b):
-    return bool(a and b and all(a[k] == b[k] for k in ('pid','start_time','pgid','boot_time')))
+    return bool(a and b and all(a[k] == b[k] for k in ('pid', 'start_time', 'pgid'))
+                and same_boot(a.get('boot_time'), b.get('boot_time')))
 
 
 def group_members(pgid):
@@ -192,7 +203,7 @@ async def reap_owned(owner, trusted_members=(), *, timeout=2.0):
     pgid, pid = owner['pgid'], owner['pid']
     proof = {'pid': pid, 'pgid': pgid, 'signals': [], 'ok': False}
     # Gate 1 — reboot: old pid/pgid are meaningless; every recorded process is gone.
-    if psutil.boot_time() != owner['boot_time']:
+    if not same_boot(psutil.boot_time(), owner['boot_time']):
         return {**proof, 'result': 'dead', 'reason': 'boot_time_changed', 'ok': True}
     leader_alive = same_identity(owner, identity(pid))
     members = group_members(pgid)

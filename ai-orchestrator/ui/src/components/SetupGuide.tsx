@@ -96,7 +96,10 @@ export function SetupGuide({
           <p className="eyebrow">{t('shell.setup.eyebrow')}</p>
           <h2>{t('shell.setup.heading')}</h2>
         </div>
-        {!mobile.active&&<button type="button" className="btn small ghost" onClick={handleHide}>{t('shell.setup.hideForNow')}</button>}
+        <div className="setup-guide-actions">
+          {!mobile.active&&<button type="button" className="btn small ghost" onClick={() => { location.hash = '#/setup' }}>{t('shell.wizard.open')}</button>}
+          {!mobile.active&&<button type="button" className="btn small ghost" onClick={handleHide}>{t('shell.setup.hideForNow')}</button>}
+        </div>
       </div>
       <ol className="setup-list">
         {steps.map(step => (

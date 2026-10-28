@@ -55,6 +55,32 @@ export interface SetupInput {
   errors?: SetupErrors
 }
 
+export type DoctorCheck = { key: string; level: 'OK' | 'WARN' | 'FAIL'; detail: string }
+export type WizardStatus = 'complete' | 'warning' | 'missing' | 'checking'
+export type DoctorStatusKey = 'python' | 'providers' | 'clis' | 'panel' | 'node'
+
+/** Map one doctor check to the setup wizard's display state. */
+export function doctorStatus(checks: readonly DoctorCheck[] | null | undefined, key: string): WizardStatus {
+  const found = checks?.find(check => check.key === key)
+  if (!found) return 'checking'
+  return found.level === 'OK' ? 'complete' : found.level === 'WARN' ? 'warning' : 'missing'
+}
+
+/** Group CLI checks while keeping missing results in the checking state. */
+export function doctorWizardStatuses(checks: readonly DoctorCheck[] | null | undefined): Record<DoctorStatusKey, WizardStatus> {
+  const cliChecks = checks?.filter(check => check.key.startsWith('cli:')) ?? []
+  const cliStatus: WizardStatus = !cliChecks.length ? 'checking'
+    : cliChecks.some(check => check.level === 'FAIL') ? 'missing'
+      : cliChecks.some(check => check.level === 'WARN') ? 'warning' : 'complete'
+  return {
+    python: doctorStatus(checks, 'python'),
+    providers: doctorStatus(checks, 'providers'),
+    clis: cliStatus,
+    panel: doctorStatus(checks, 'panel'),
+    node: doctorStatus(checks, 'node'),
+  }
+}
+
 export interface SetupStep {
   key: SetupStepKey
   title: string

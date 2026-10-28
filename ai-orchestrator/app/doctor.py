@@ -35,48 +35,46 @@ def _kind(name):
         return str(name)
 
 
-def run(root: Path, out=print) -> int:
+def checks(root: Path, *, server: bool = True) -> list[dict]:
     root = Path(root)
-    failed = False
+    result = []
 
-    def line(level, name, detail):
-        nonlocal failed
-        failed = failed or level == 'FAIL'
-        out(f'{level:<4} {name} — {detail}')
+    def check(key, level, detail):
+        result.append({'key': key, 'level': level, 'detail': detail})
 
     # a) python
     v = sys.version_info
     if v >= (3, 12):
-        line('OK', 'python', f'{v.major}.{v.minor}.{v.micro}')
+        check('python', 'OK', f'{v.major}.{v.minor}.{v.micro}')
     else:
-        line('FAIL', 'python', f'{v.major}.{v.minor}.{v.micro} is too old; install Python 3.12 or newer')
+        check('python', 'FAIL', f'{v.major}.{v.minor}.{v.micro} is too old; install Python 3.12 or newer')
 
     # b) providers.yaml
     policy = None
     path = root / '.system' / 'providers.yaml'
     if not path.exists():
-        line('FAIL', 'providers.yaml', f'{path} is missing; copy providers.example.yaml or a preset '
+        check('providers', 'FAIL', f'{path} is missing; copy providers.example.yaml or a preset '
                                        'to .system/providers.yaml')
     else:
         try:
             from app.provider_policy import load_config, effective
             policy = effective(load_config(path))
         except Exception as exc:
-            line('FAIL', 'providers.yaml', f'invalid: {exc}; fix .system/providers.yaml '
+            check('providers', 'FAIL', f'invalid: {exc}; fix .system/providers.yaml '
                                            '(see providers.example.yaml)')
         else:
             roles = policy.get('roles', {})
             chains = '; '.join(
                 f"{role}: {' → '.join(str(i.get('provider')) for i in roles.get(role, []))}"
                 for role in ('author', 'reviewer'))
-            line('OK', 'providers.yaml', chains)
+            check('providers', 'OK', chains)
 
     # c) provider CLIs
     try:
         from app import session_api
         installed = session_api.installed_providers()
     except Exception as exc:
-        line('FAIL', 'provider CLIs', f'cannot resolve provider executables: {exc}')
+        check('other_clis', 'FAIL', f'cannot resolve provider executables: {exc}')
     else:
         installed_kinds = {}
         for name, ok in installed.items():
@@ -91,49 +89,64 @@ def run(root: Path, out=print) -> int:
                         policy_kinds.append(k)
         for k in policy_kinds:
             if installed_kinds.get(k):
-                line('OK', f'{k} CLI', 'installed')
+                check(f'cli:{k}', 'OK', 'installed')
             else:
-                line('FAIL', f'{k} CLI', f'not found on PATH; install the {k} CLI or remove it '
+                check(f'cli:{k}', 'FAIL', f'not found on PATH; install the {k} CLI or remove it '
                                          'from .system/providers.yaml')
         extra = sorted(k for k, ok in installed_kinds.items() if ok and k not in policy_kinds)
         if extra:
-            line('OK', 'other CLIs', f"installed but not in the policy: {', '.join(extra)}")
+            check('other_clis', 'OK', f"installed but not in the policy: {', '.join(extra)}")
 
     # d) panel
     if (root / 'app' / 'static' / 'index.html').exists():
-        line('OK', 'panel', 'app/static/index.html is built')
+        check('panel', 'OK', 'app/static/index.html is built')
     else:
-        line('FAIL', 'panel', 'app/static/index.html is missing; cd ui && npm install && npm run build && cd ..')
+        check('panel', 'FAIL', 'app/static/index.html is missing; cd ui && npm install && npm run build && cd ..')
 
     # e) node
     node = shutil.which('node')
     if node:
         ver = _node_version(node)
         if ver and ver[0] < (22, 6):
-            line('WARN', 'node', f'node v{ver[1]} found; 22.6+ is needed to build the panel or run UI tests')
+            check('node', 'WARN', f'node v{ver[1]} found; 22.6+ is needed to build the panel or run UI tests')
         else:
-            line('OK', 'node', f'{node} (v{ver[1]})' if ver else node)
+            check('node', 'OK', f'v{ver[1]}' if ver else 'installed')   # version only: the path names the user's home
     else:
-        line('WARN', 'node', 'not found; needed only to build the panel')
+        check('node', 'WARN', 'not found; needed only to build the panel')
 
     # f) server
-    try:
-        with urllib.request.urlopen(HEALTH_URL, timeout=2) as resp:
-            body = resp.read()
+    if server:
         try:
-            data = json.loads(body or b'{}')
-        except ValueError:
-            data = {}
-        if not isinstance(data, dict):
-            data = {}
-        info = data.get('version') if isinstance(data.get('version'), dict) else data   # /health nests them
-        commit = info.get('commit', '?')
-        schema = info.get('schema', '?')
-        line('OK', 'server', f'running at {HEALTH_URL} (commit {commit}, schema {schema})')
-    except Exception:
-        line('WARN', 'server', 'not running: .venv/bin/python -m app serve')
+            with urllib.request.urlopen(HEALTH_URL, timeout=2) as resp:
+                body = resp.read()
+            try:
+                data = json.loads(body or b'{}')
+            except ValueError:
+                data = {}
+            if not isinstance(data, dict):
+                data = {}
+            info = data.get('version') if isinstance(data.get('version'), dict) else data   # /health nests them
+            commit = info.get('commit', '?')
+            schema = info.get('schema', '?')
+            check('server', 'OK', f'running at {HEALTH_URL} (commit {commit}, schema {schema})')
+        except Exception:
+            check('server', 'WARN', 'not running: .venv/bin/python -m app serve')
+
+    return result
+
+
+def run(root: Path, out=print) -> int:
+    results = checks(root)
+    names = {'python': 'python', 'providers': 'providers.yaml', 'panel': 'panel', 'node': 'node',
+             'server': 'server', 'other_clis': 'other CLIs'}
+    for item in results:
+        key = item['key']
+        name = f"{key[4:]} CLI" if key.startswith('cli:') else names[key]
+        if key == 'other_clis' and item['detail'].startswith('cannot resolve provider executables:'):
+            name = 'provider CLIs'
+        out(f"{item['level']:<4} {name} — {item['detail']}")
 
     # g) sign-in note
     out('Sign-in is checked in the panel (Settings → Accounts → Check session status); '
         'doctor does not call providers.')
-    return 1 if failed else 0
+    return 1 if any(item['level'] == 'FAIL' for item in results) else 0

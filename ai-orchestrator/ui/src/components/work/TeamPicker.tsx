@@ -1,8 +1,8 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
-import { LoaderCircle, Plus, RefreshCw, ShieldCheck, SlidersHorizontal, Trash2, TriangleAlert, X } from 'lucide-react'
+import { GripVertical, LoaderCircle, Plus, RefreshCw, ShieldCheck, SlidersHorizontal, Trash2, TriangleAlert, X } from 'lucide-react'
 import { ApiError, previewTeam } from '../../api'
 import { Provider, api, installedOf, type Availability, type Policy, type Team, type TeamPreview, type TeamProblem } from './shared'
-import { agyFamilyLabel, agyGroups, agyName, agyParts, baseOf, covers, effortLabel, joinId, linkMissing, linkOptions, modelLabel, splitId, type Catalog } from './team'
+import { agyFamilyLabel, agyGroups, agyName, agyParts, baseOf, covers, effortLabel, joinId, linkMissing, linkOptions, modelLabel, moveLink, splitId, type Catalog } from './team'
 import { teamPreviewer } from './flows'
 import { mobile } from '../../mobile'
 import { UsageRing } from './UsageRing'
@@ -10,6 +10,8 @@ import { locale, t } from '../../i18n'
 
 /** `preview` belongs to exactly `team`; it is null while the newest selection's preview is pending or invalid. */
 export type TeamSelection = {team:Team;preview:TeamPreview|null;invalid?:boolean}
+type Role = 'author' | 'reviewer'
+type LinkPos = {role:Role;index:number}
 
 const ROLES = [['author','WRITE',t('session.team.role.authorWrite')],['reviewer','READ_ONLY',t('session.team.role.reviewerReadOnly')]] as const
 const SHORT = {author:t('session.role.author'),reviewer:t('session.role.reviewer')} as const
@@ -68,6 +70,12 @@ export function TeamPicker({policy,initial,compact=false,startOpen=false,onChang
     catch(e){setCatalogError(String(e))}finally{setRefreshing(false)}
   }
   const editorId=useId()
+  const dragSource=useRef<LinkPos|null>(null), pendingFocus=useRef<LinkPos|null>(null)
+  const handleRefs=useRef<Record<Role,(HTMLButtonElement|null)[]>>({author:[],reviewer:[]})
+  const [dragging,setDragging]=useState<LinkPos|null>(null), [dropTarget,setDropTarget]=useState<LinkPos|null>(null)
+  const clearDrag=()=>{dragSource.current=null;setDragging(null);setDropTarget(null)}
+  useEffect(()=>{const pos=pendingFocus.current;if(!pos)return;pendingFocus.current=null
+    handleRefs.current[pos.role][pos.index]?.focus()},[team])
 
   const allowed=(role:'author'|'reviewer',profile:string)=>(policy.ceiling?.allowed[role]??policy.policy.roles[role].map(i=>i.provider))
     .filter(p=>!policy.capabilities||policy.capabilities[p]?.profiles.includes(profile))
@@ -94,6 +102,8 @@ export function TeamPicker({policy,initial,compact=false,startOpen=false,onChang
   }
   const checkedAt=Object.values(availability??{}).map(a=>a.checked_at).filter((x):x is number=>!!x).sort().pop()
 
+  const linkName=(i:number)=>i===0?t('session.team.link.primary'):t('session.team.link.backup',{index:i})
+
   /** One chain link's provider/account → model → effort selects (the full editor and the composer share it). */
   function linkFields(role:'author'|'reviewer',profile:string,i:number,bare=false){
     const entries=allowed(role,profile), chain=team[role], o=linkOptions(entries,catalog,capOf)
@@ -101,7 +111,7 @@ export function TeamPicker({policy,initial,compact=false,startOpen=false,onChang
     const current=chain[i], s=splitId(current), base=baseOf(current), model=s?.model??null, effort=s?.effort??null
     const others=chain.filter((_,j)=>j!==i), models=o.modelsFor(base), efforts=o.effortsFor(base,model)
     const defaultEffort=o.defaultEffortFor(base,model)
-    const name=bare?SHORT[role]:i===0?t('session.team.link.primary'):t('session.team.link.backup',{index:i})
+    const name=bare?SHORT[role]:linkName(i)
     // Changing the model keeps the effort while the ceiling still admits it.
     const withModel=(m:string|null)=>joinId(base,m,effort&&o.effortsFor(base,m).includes(effort)?effort:null)
     const wrap=(text:string,el:JSX.Element)=>bare?el:<label>{text}{el}</label>
@@ -182,10 +192,51 @@ export function TeamPicker({policy,initial,compact=false,startOpen=false,onChang
       return <fieldset className="team-role" key={role}>
         <legend><span className={'chip '+role}>{label}</span></legend>
         <div className="team-selects">
-          {chain.map((_,i)=><div className="team-link" key={i}>
+          {chain.map((_,i)=>{
+            const name=linkName(i)
+            const cls='team-link'+(dragging?.role===role&&dragging.index===i?' dragging':'')+(dropTarget?.role===role&&dropTarget.index===i?' drop-target':'')
+            return <div className={cls} key={i}
+              onDragOver={e=>{
+                const src=dragSource.current
+                if(!src||src.role!==role)return
+                e.preventDefault()
+                if(e.dataTransfer)e.dataTransfer.dropEffect='move'
+                setDropTarget(cur=>src.index===i?null:cur?.role===role&&cur.index===i?cur:{role,index:i})
+              }}
+              onDragLeave={e=>{
+                const rel=e.relatedTarget as Node|null
+                if(rel&&typeof rel==='object'&&'nodeType' in rel&&e.currentTarget.contains(rel))return
+                setDropTarget(cur=>cur?.role===role&&cur.index===i?null:cur)
+              }}
+              onDragEnd={clearDrag}
+              onDrop={e=>{
+                const src=dragSource.current
+                if(!src||src.role!==role)return
+                e.preventDefault()
+                clearDrag()
+                if(src.index!==i)setRole(role,moveLink(chain,src.index,i))
+              }}>
+              {chain.length>1&&<button type="button" className="icon-btn drag-handle" draggable
+                ref={el=>{handleRefs.current[role][i]=el}}
+                aria-label={t('session.team.dragHandleAria',{name})}
+                title={t('session.team.dragHandleTitle')}
+                onDragStart={e=>{
+                  dragSource.current={role,index:i}
+                  e.dataTransfer?.setData('text/plain','')
+                  if(e.dataTransfer)e.dataTransfer.effectAllowed='move'
+                  setDragging({role,index:i})
+                }}
+                onKeyDown={e=>{
+                  if(e.key!=='ArrowUp'&&e.key!=='ArrowDown')return
+                  e.preventDefault()
+                  const to=e.key==='ArrowUp'?i-1:i+1
+                  if(to<0||to>=chain.length)return
+                  pendingFocus.current={role,index:to}
+                  setRole(role,moveLink(chain,i,to))
+                }}><GripVertical aria-hidden/></button>}
               {linkFields(role,profile,i)}
               {i>0&&<button type="button" className="icon-btn remove-link" aria-label={t('session.team.removeBackupAria',{index:i})} title={t('session.team.removeBackupTitle')} onClick={()=>setRole(role,chain.filter((_,j)=>j!==i))}><Trash2 aria-hidden/></button>}
-            </div>)}
+            </div>})}
           {next&&<button type="button" className="btn small add-link" onClick={()=>setRole(role,[...chain,next])}><Plus aria-hidden/>{t('session.team.addBackup')}</button>}
         </div>
         <div className="team-badges">{team[role].map(p=><span className="flow" key={p}><Provider name={p}/>{badges(p)}</span>)}</div>

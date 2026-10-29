@@ -175,7 +175,7 @@ class Validation(unittest.TestCase):
                   patch.object(github, 'gh') as gh_mock,
                   self.assertRaises(github.GitHubError) as pre_existing):
                 github.clone('db', 'octo/half-clone-test-99')
-            self.assertEqual(pre_existing.exception.code, 'target_exists')
+            self.assertEqual(pre_existing.exception.code, 'target_occupied')
             gh_mock.assert_not_called()
             rmtree.assert_not_called()
 
@@ -258,7 +258,7 @@ class Api(unittest.TestCase):
     def test_clone_refuses_an_occupied_or_linked_target(self):
         self.set_clone_dir()
         (self.home / 'code/other').mkdir(); (self.home / 'code/other/x').write_text('mine')
-        self.assertEqual(self.post('/api/github/clone', {'repo': 'octo/other'}, 409)['code'], 'target_exists')
+        self.assertEqual(self.post('/api/github/clone', {'repo': 'octo/other'}, 409)['code'], 'target_occupied')
         (self.home / 'code/linked').symlink_to(self.home)
         self.assertEqual(self.post('/api/github/clone', {'repo': 'octo/linked'}, 409)['code'], 'target_exists')
         self.assertEqual(self.gh_calls(), [])

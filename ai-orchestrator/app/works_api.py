@@ -106,7 +106,8 @@ def create_work(body: CreateWork, request: Request, response: Response):
                 try:
                     copy, branch = isolation.create(source, wid, body.title, conn)
                 except GitHubError as exc:
-                    raise HTTPException(exc.status, detail={'code': exc.code, 'detail': str(exc)}) from None
+                    extra = {} if getattr(request.state, 'conductor_mobile_device', None) else exc.extra   # K-055: no folder listing for a phone
+                    raise HTTPException(exc.status, detail={'code': exc.code, 'detail': str(exc), **extra}) from None
             work, created = ws.create_work(conn, wid, body.title, copy, {'isolated_from': source, 'branch': branch})
         else:
             work, created = ws.create_work(conn, str(body.client_work_id), body.title, path)

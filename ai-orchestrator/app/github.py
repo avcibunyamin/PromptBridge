@@ -37,9 +37,9 @@ URL_AUTH = re.compile('://[^/\\s?#\'"`<>]+@')
 
 
 class GitHubError(Exception):
-    def __init__(self, code, detail, status=409):
+    def __init__(self, code, detail, status=409, **extra):
         super().__init__(detail)
-        self.code, self.status = code, status
+        self.code, self.status, self.extra = code, status, extra   # extra: fields added to the error answer
 
 
 # ── validation (pure) ──────────────────────────────────────────────────────────
@@ -225,7 +225,7 @@ def clone(db_path, repo):
         except GitHubError:
             same = False
         if not same or target.resolve().parent != root:
-            raise GitHubError('target_exists', f'{target} başka bir içerikle dolu')
+            raise GitHubError('target_occupied', f'{target} başka bir içerikle dolu')
         return {'path': str(target.resolve()), 'cloned': False}
     try:
         gh('repo', 'clone', repo, str(target), timeout=CLONE_TIMEOUT)

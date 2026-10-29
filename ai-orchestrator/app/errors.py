@@ -21,8 +21,10 @@ def install_handlers(app):
         extra = {}
         if isinstance(detail, dict):
             code = detail.get('code',code)
-            if code == 'team_invalid':   # F3-03: the only extension; bounded, enum-checked, no raw input
+            if code == 'team_invalid':   # F3-03: bounded, enum-checked, no raw input
                 extra['problems'] = _problems(detail.get('problems'))
+            if code == 'not_a_repo' and isinstance(detail.get('repos'), list):   # K-055: server-made folder paths
+                extra['repos'] = [str(r)[:4096] for r in detail['repos'][:8]]
             detail = detail.get('detail',code)
         return JSONResponse({'detail':str(detail),'code':code,**extra},status_code=exc.status_code,headers=exc.headers)
 

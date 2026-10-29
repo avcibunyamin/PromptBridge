@@ -112,6 +112,19 @@ export function sortPinnedWorks<T extends { id: string }>(works: readonly T[], p
   return [...works.filter(w => pinned.has(w.id)), ...works.filter(w => !pinned.has(w.id))]
 }
 
+/** K-055: works grouped by project (an isolated copy's source, else the folder), in list order of first appearance. */
+export type ProjectGroup<T> = { key: string; name: string; works: T[] }
+export function groupByProject<T extends { workspace_path: string; isolation?: { source: string } | null }>(works: readonly T[]): ProjectGroup<T>[] {
+  const groups = new Map<string, ProjectGroup<T>>()
+  for (const w of works) {
+    const key = w.isolation?.source ?? w.workspace_path
+    let g = groups.get(key)
+    if (!g) groups.set(key, g = { key, name: key.split('/').filter(Boolean).pop() || key, works: [] })
+    g.works.push(w)
+  }
+  return [...groups.values()]
+}
+
 /** TB-37: Toggle a work ID in `pinned_works` (deduplicated, bounded by PINNED_WORKS_LIMIT when adding). */
 export function togglePinnedWork(pinnedIds: readonly string[], workId: string, limit = PINNED_WORKS_LIMIT): string[] {
   const unique = pinnedIds.filter((id, idx) => id && pinnedIds.indexOf(id) === idx)

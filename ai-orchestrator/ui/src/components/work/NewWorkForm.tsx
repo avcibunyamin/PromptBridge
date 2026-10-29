@@ -10,32 +10,35 @@ import { startWork, resumeCreated, discardCreate, deriveTitle } from './flows'
 import { hasNativeFolderPicker, installFolderSelectedListener, requestNativeFolder } from './nativeBridge'
 import { mobile } from '../../mobile'
 import { acceptedDigest, defaultTeam, loadSettings, type SettingsView } from '../../settings'
-import { t } from '../../i18n'
+import { say, t } from '../../i18n'
 
 /** New work = create the work (idempotent id), then its first message (idempotent id).
  *  If the message fails after the work exists, the work is kept and opened; its view retries the same message id. */
-/** `folders`: on a phone (K-033/3) the work starts only in a folder an existing work uses; no path field, no GitHub. */
-export function NewWorkForm({onCreated,folders}:{onCreated:(workId:string)=>void;folders?:string[]}){
-  const [workspace,setWorkspace]=useState(''), [task,setTask]=useState('')
+/** `folders`: on a phone (K-033/3) the work starts only in a folder an existing work uses; no path field, no GitHub.
+ *  `initial`: K-055 “new branch” from a project in the sidebar (its folder, separate copy on). */
+export function NewWorkForm({onCreated,folders,initial}:{onCreated:(workId:string)=>void;folders?:string[];initial?:{workspace:string;isolate:boolean}}){
+  const [workspace,setWorkspace]=useState(initial?.workspace??''), [task,setTask]=useState('')
   const [canSelectFolder] = useState(()=>hasNativeFolderPicker(window))
   const [fromGitHub,setFromGitHub]=useState(false)   // TB-21: clone a repository and use its folder
   const [choosing,setChoosing]=useState(false)
   // K-041: Finder on the Mac — the app's own panel, or (in a browser) the server opens the same dialog on this Mac
   async function chooseFolder(){
     if(canSelectFolder){requestNativeFolder(window);return}
-    setChoosing(true);setError('')
+    setChoosing(true);setError('');setInnerRepos(null)
     try{const r=await api<{path:string|null;cancelled:boolean;error:string|null}>('/api/system/choose-folder',{method:'POST'})
       if(r.path)setWorkspace(r.path);else if(r.error)setError(t('work.new.folderDialogFailed',{error:r.error}))}
     catch(e){setError(String(e))}finally{setChoosing(false)}
   }
-  const [isolate,setIsolate]=useState(false)   // TB-26 (K-034): run in a git worktree; the folder itself stays untouched
+  const [isolate,setIsolate]=useState(initial?.isolate??false)   // TB-26 (K-034): run in a git worktree; the folder itself stays untouched
   // F3-03: acceptance is bound to the previewed digest of the selected team; a new selection drops it.
   const [policy,setPolicy]=useState<Policy|null>(null), [sel,setSel]=useState<TeamSelection|null>(null), [acceptedFor,setAcceptedFor]=useState<string|null>(null)
   const [wait,setWait]=useState<WaitChoice|null>(null)   // F3-04: opt-in quota wait for the first message
   const [error,setError]=useState(''), [busy,setBusy]=useState(false)
+  const [innerRepos,setInnerRepos]=useState<string[]|null>(null)   // K-055: not a repo → the repos inside it
+  useEffect(()=>setInnerRepos(null),[workspace,isolate])   // the help is about the folder and choice it was shown for
   const [pending,setPending]=useState<PendingCreate|null>(()=>pendingCreate.get())
   const [settings,setSettings]=useState<SettingsView|null|undefined>(undefined)   // TB-19: undefined while loading
-  const loadPolicy=()=>api<Policy>('/api/sessions/providers').then(p=>{setPolicy(p);setError('')}).catch(e=>{setPolicy(null);setError(String(e))})
+  const loadPolicy=()=>api<Policy>('/api/sessions/providers').then(p=>{setPolicy(p);setError('')}).catch(e=>{setPolicy(null);setError(String(e));setInnerRepos(null)})
   useEffect(()=>{
     const cleanupFolderSelected = installFolderSelectedListener(window, setWorkspace)
     const created=resumeCreated()   // a reload after the work was created: open it, never an empty form
@@ -50,7 +53,7 @@ export function NewWorkForm({onCreated,folders}:{onCreated:(workId:string)=>void
   },[])
 
   async function run(p:PendingCreate){
-    setBusy(true);setError('');setPending(p)
+    setBusy(true);setError('');setInnerRepos(null);setPending(p)
     const r=await startWork(p,{createWork,addMessage})
     setBusy(false)
     if(r.kind==='opened'){
@@ -58,7 +61,9 @@ export function NewWorkForm({onCreated,folders}:{onCreated:(workId:string)=>void
       if(e)rejectedFirst.set(r.workId,{text:p.message.text,message:String(e),code:e instanceof ApiError?e.code:undefined,team:p.message.team,wait})
       onCreated(r.workId);return
     }
-    if(r.kind==='create_rejected'){setPending(null);setError(String(r.error))
+    if(r.kind==='create_rejected'){setPending(null);setError(say(r.error))
+      const repos=!folders&&r.error instanceof ApiError&&r.error.code==='not_a_repo'?r.error.body?.repos:null
+      setInnerRepos(Array.isArray(repos)?repos.filter((x):x is string=>typeof x==='string'):null)
       if(r.error instanceof ApiError&&r.error.status===409){setAcceptedFor(null);void loadPolicy()}}
     else setError(t('work.new.createUncertain'))
   }
@@ -110,7 +115,13 @@ export function NewWorkForm({onCreated,folders}:{onCreated:(workId:string)=>void
   return <form className="work-form new-chat" onSubmit={e=>{e.preventDefault();submit()}}>
     <div className="new-chat-head"><h1>{t('work.new.heading')}</h1>
       <p className="intro">{t('work.new.intro')}</p></div>
-    {error&&<div className="error-banner" role="alert">{error}</div>}
+    {error&&<div className="error-banner"><span role="alert">{error}</span>
+      {innerRepos&&<div className="not-repo-help"><p>{t(innerRepos.length?'work.new.notRepoHint':'work.new.notRepoHintNone')}</p>
+        {innerRepos.length>0&&<p className="small">{t('work.new.innerRepos')}:</p>}
+        <div className="not-repo-actions">{innerRepos.map(p=><button key={p} type="button" className="btn small mono" title={p}
+          onClick={()=>{setWorkspace(p);setError('');document.getElementById('nw-task')?.focus()}}>{p.split('/').pop()}</button>)}
+          <button type="button" className="btn small" onClick={()=>{setIsolate(false);setError('');document.getElementById('nw-task')?.focus()}}>{t('work.new.isolateOff')}</button></div>
+      </div>}</div>}
     <div className="composer new-composer">
       <div className="folder-row">
         <label htmlFor="nw-workspace" className="sr-only">{t('work.new.folderLabel')}</label>

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-29
+
+### Added
+- The work list is grouped by project (a separate copy belongs to its source folder). Each project header has a **+** that opens a new work in the same folder with the separate copy on, so several branches of one project can run at the same time; an isolated work shows its branch name.
+- Starting a separate copy in a folder that is not a git repository lists the repositories directly inside it, one click to pick one, or turns the separate copy off. The list is not sent to a paired phone.
+- The context ring shows the tokens used next to it (for example `12k / 200k`) once a step has run; its panel says that MCP servers are off for safety.
+
+### Fixed
+- Cloning into a folder that already holds something else under the same name (letter case ignored) now says so instead of “the target path is not a folder” (new error code `target_occupied`).
+- New work form errors show the translated message instead of the raw server text.
+
 ## [0.4.1] - 2026-10-29
 
 ### Fixed

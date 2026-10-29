@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKe
 import { ChevronLeft, Pin, Plus } from 'lucide-react'
 import { deleteWork, isolationRemove, listWorks, listLegacySessions, patchWork, type Work, type WorksPage, type LegacySession } from '../api'
 import { locale, t } from '../i18n'
-import { deleteWorkErrorMessage, loadSettings, PINNED_WORKS_LIMIT, saveSettings, sortPinnedWorks, togglePinnedWork, workMenuItems, type WorkMenuAction } from '../settings'
+import { deleteWorkErrorMessage, groupByProject, loadSettings, PINNED_WORKS_LIMIT, saveSettings, sortPinnedWorks, togglePinnedWork, workMenuItems, type WorkMenuAction } from '../settings'
 import { Modal, Pill } from './work/shared'
 import { NewWorkForm } from './work/NewWorkForm'
 import { WorkView } from './work/WorkView'
@@ -42,6 +42,8 @@ export function WorkPanel({head,foot,top,override,onOpen}:{head?:ReactNode;foot?
   // K-044 / #310: all hooks are called unconditionally at the top of the component before any early return.
   const [route,setRoute]=useState<Route>(parseRoute)
   const [archived,setArchived]=useState(false)
+  const [prefill,setPrefill]=useState<{workspace:string;isolate:boolean}|null>(null)   // K-055: “new branch” of a project
+  const [formSeq,setFormSeq]=useState(0)   // each “Yeni çalışma” / “+” starts a fresh form
   const [works,setWorks]=useState<Work[]>([]), [page,setPage]=useState<Omit<WorksPage,'items'>|null>(null), [pages,setPages]=useState(0)
   const [legacy,setLegacy]=useState<LegacySession[]>([]), [legacyCursor,setLegacyCursor]=useState<string|null>(null), [legacyPages,setLegacyPages]=useState(0)
   const [listError,setListError]=useState(''), [loadingMore,setLoadingMore]=useState(false)
@@ -58,7 +60,7 @@ export function WorkPanel({head,foot,top,override,onOpen}:{head?:ReactNode;foot?
 
   // back at the list by any way (Android back, the tab): the next '‹ Çalışmalar' must not step history again
   useEffect(()=>{const on=()=>{const r=parseRoute();if(r.kind==='home')fromList.current=false;setRoute(r)};addEventListener('hashchange',on);return()=>removeEventListener('hashchange',on)},[])
-  const go=(r:Route)=>{onOpen?.();fromList.current=route.kind==='home'&&r.kind!=='home';if(location.hash!==hashOf(r))location.hash=hashOf(r);else setRoute(r)}
+  const go=(r:Route)=>{onOpen?.();if(r.kind!=='new')setPrefill(null);fromList.current=route.kind==='home'&&r.kind!=='home';if(location.hash!==hashOf(r))location.hash=hashOf(r);else setRoute(r)}
   const back=()=>{if(fromList.current){fromList.current=false;history.back()}else go({kind:'home'})}
 
   const refreshWorks=useCallback(async()=>{
@@ -254,7 +256,7 @@ export function WorkPanel({head,foot,top,override,onOpen}:{head?:ReactNode;foot?
   // ≤600px shows one pane at a time: the list on home, otherwise the open item with a way back (CSS only elsewhere)
   return <div className="body work-layout" data-pane={!override&&route.kind==='home'?'list':'detail'}><aside className="sidebar work-sidebar">
     {head}
-    <div className="side-head">{canCommand()&&<button className="newwork" onClick={()=>go({kind:'new'})}><Plus size={16} aria-hidden/>{t('shell.work.new')}</button>}</div>
+    <div className="side-head">{canCommand()&&<button className="newwork" onClick={()=>{setPrefill(null);setFormSeq(n=>n+1);go({kind:'new'})}}><Plus size={16} aria-hidden/>{t('shell.work.new')}</button>}</div>
     <p className="nav-label d-only">{t('shell.work.recentUpper')}</p>
     <div className="side-filter" role="group" aria-label={t('shell.work.filterLabel')}>
       <button aria-pressed={!archived} onClick={()=>setArchived(false)}>{t('shell.work.filterActive')}{page?` (${page.counts.active})`:''}</button>
@@ -262,7 +264,11 @@ export function WorkPanel({head,foot,top,override,onOpen}:{head?:ReactNode;foot?
     </div>
     {listError&&<p className="side-error" role="alert">{listError}</p>}
     <nav className="session-list" aria-label={t('shell.work.listLabel')}>
-      {orderedWorks.map(w=>{
+      {groupByProject(orderedWorks).map(g=><div key={g.key} className="project-group" role="group" aria-label={t('shell.work.projectGroup',{name:g.name,count:g.works.length})}>
+        <div className="project-head"><span className="project-name" title={g.key}>{g.name}</span><span className="project-count">{g.works.length}</span>
+          {allowCommand&&!mobile.active&&!archived&&<button type="button" className="project-new" aria-label={t('shell.work.newBranch',{name:g.name})} title={t('shell.work.newBranch',{name:g.name})}
+            onClick={()=>{setPrefill({workspace:g.key,isolate:true});setFormSeq(n=>n+1);go({kind:'new'})}}><Plus size={14} aria-hidden/></button>}</div>
+      {g.works.map(w=>{
         const sel=!override&&route.kind==='work'&&route.id===w.id   // another page open: nothing is selected
         const pinned=pinnedIds.includes(w.id)
         const actions=workMenuItems(w,{pinned,mobile:mobile.active,canCommand:allowCommand})
@@ -287,6 +293,7 @@ export function WorkPanel({head,foot,top,override,onOpen}:{head?:ReactNode;foot?
             </div>
             :<button data-work-id={w.id} aria-pressed={sel} className={`session ${sel?'sel':''}`} onClick={()=>go({kind:'work',id:w.id})}>
               <span className="nm">{pinned&&<Pin size={12} className="pin-mark" aria-label={t('shell.work.pinned')}/>}{w.title}</span>
+              {w.isolation&&!w.isolation.removed&&<span className="br mono" title={w.isolation.branch}><span aria-hidden>⎇ </span>{w.isolation.branch.replace(/^conductor\//,'')}</span>}
               {statusBadge}
               {timeLine}
             </button>}
@@ -296,7 +303,7 @@ export function WorkPanel({head,foot,top,override,onOpen}:{head?:ReactNode;foot?
             {actions.map(act=><button key={act} type="button" role="menuitem" className={act==='delete'?'danger':undefined}
               onClick={e=>{e.stopPropagation();onMenuAction(w,act)}}>{MENU_LABELS[act]}</button>)}
           </div>}
-        </div>})}
+        </div>})}</div>)}
       {page&&!works.length&&<p className="empty-list">{archived?t('shell.work.emptyArchived'):<>{t('shell.work.emptyActiveLine1')}<br/>{t('shell.work.emptyActiveLine2')}</>}</p>}
       {!page&&!listError&&<p className="loading">{t('shell.loading')}</p>}
       {page?.next_cursor&&<button className="btn small more" disabled={loadingMore} onClick={()=>void moreWorks()}>{t('shell.work.more')}</button>}
@@ -315,7 +322,7 @@ export function WorkPanel({head,foot,top,override,onOpen}:{head?:ReactNode;foot?
   </aside><main className="main work-main">{top}{!override&&<button className="m-back" onClick={back}><ChevronLeft size={18} aria-hidden/>{t('shell.work.listLabel')}</button>}
     {override??<div className="pane">
     {isNew&&!allowCommand&&<p className="empty-list">{t('shell.work.mobileReadOnly')}</p>}
-    {isNew&&allowCommand&&<NewWorkForm folders={mobile.active?[...new Set(works.map(w=>w.workspace_path))]:undefined} onCreated={id=>{void refreshWorks();go({kind:'work',id})}}/>}
+    {isNew&&allowCommand&&<NewWorkForm key={formSeq} initial={prefill??undefined} folders={mobile.active?[...new Set(works.map(w=>w.workspace_path))]:undefined} onCreated={id=>{void refreshWorks();go({kind:'work',id})}}/>}
     {route.kind==='work'&&<WorkView key={route.id} workId={route.id} onChange={changed}/>}
     {route.kind==='session'&&<><p className="info-note">{t('shell.work.legacyInfoNote')}</p>
       <SessionView key={route.id} sessionId={route.id} onChange={()=>void refreshLegacy()}/></>}

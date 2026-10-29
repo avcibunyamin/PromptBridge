@@ -29,13 +29,31 @@ def root() -> Path:
     return Path(os.environ.get(ROOT_ENV) or Path.home() / '.conductor' / 'worktrees')
 
 
+def _child_repos(path: Path, limit: int = 8) -> list[str]:
+    """K-055: git repositories directly inside a folder that is not one, so the panel can offer them."""
+    found = []
+    try:
+        children = sorted(path.resolve().iterdir())
+    except OSError:
+        return []
+    for p in children:
+        try:   # one unreadable sibling (EPERM under macOS privacy) must not hide the others
+            if not p.is_symlink() and p.is_dir() and (p / '.git').exists():
+                found.append(str(p))
+        except OSError:
+            continue
+        if len(found) == limit:
+            break
+    return found
+
+
 def _repo_root(path: Path) -> Path:
     try:
         top = Path(git(path, 'rev-parse', '--show-toplevel').strip()).resolve()
     except GitHubError:
         top = None
     if top != path.resolve():
-        raise GitHubError('not_a_repo', 'Ayrı kopya için klasör bir git deposunun kökü olmalı', 422)
+        raise GitHubError('not_a_repo', 'Ayrı kopya için klasör bir git deposunun kökü olmalı', 422, repos=_child_repos(path))
     problems = gh.unsafe_config(path)
     if problems:
         raise GitHubError('unsafe_git_config', 'Depo ayarında izin verilmeyen anahtarlar: ' + ', '.join(problems))

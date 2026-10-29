@@ -91,6 +91,9 @@ class Isolation(Base):
     def test_refusals(self):
         (self.tmp / 'plain').mkdir()
         self.assertEqual(self.create(self.tmp / 'plain').json()['code'], 'not_a_repo')
+        inner = make_repo(self.tmp / 'plain' / 'inner'); (self.tmp / 'plain' / 'loose').mkdir()   # K-055: offers inner repos
+        (self.tmp / 'plain' / 'link').symlink_to(inner)
+        self.assertEqual(self.create(self.tmp / 'plain').json()['repos'], [str(inner.resolve())])
         self.assertEqual(self.create(self.src / '..' / 'proje' / '.git' / '..').status_code, 201)   # canonical root is fine
         self.assertEqual(self.create(make_repo(self.tmp / 'bos', commit=False)).json()['code'], 'empty_repo')
         sh(self.src, 'config', 'core.hooksPath', '/tmp/evil')
@@ -239,6 +242,12 @@ class Phone(unittest.TestCase):
         other = str(make_repo(Path(tmp.name).resolve() / 'other'))
         r = self.send('POST', '/api/works', json={'client_work_id': str(uuid4()), 'title': 't', 'workspace_path': other, 'isolate': True})
         self.assertEqual(r.json().get('code'), 'mobile_folder')                           # K-033/3 still applies
+        plain = Path(tmp.name).resolve() / 'plain'; make_repo(plain / 'inner')            # K-055: no folder listing for a phone
+        self.local.post('/api/works', json={'client_work_id': str(uuid4()), 'title': 'mac', 'workspace_path': str(plain)})
+        r = self.send('POST', '/api/works', json={'client_work_id': str(uuid4()), 'title': 't', 'workspace_path': str(plain), 'isolate': True})
+        self.assertEqual((r.json().get('code'), 'repos' in r.json()), ('not_a_repo', False))
+        self.assertEqual(self.local.post('/api/works', json={'client_work_id': str(uuid4()), 'title': 'm', 'workspace_path': str(plain),
+                                                             'isolate': True}).json()['repos'], [str(plain / 'inner')])
 
 
 if __name__ == '__main__':

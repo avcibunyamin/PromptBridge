@@ -54,6 +54,7 @@ export function UsageRing({identity, sessionId, status}:{identity:string; sessio
     <button type="button" className={'usage-ring '+ringTone} aria-label={label} title={label} aria-expanded={open} onClick={()=>setOpen(o=>!o)}>
       <svg viewBox="0 0 24 24" aria-hidden><circle className="track" cx="12" cy="12" r={r}/>
         <circle className="fill" cx="12" cy="12" r={r} strokeDasharray={`${fill} ${c}`} transform="rotate(-90 12 12)"/></svg>
+      {ctx&&<span className="usage-num" aria-hidden>{tokens(ctx.used)}{ctx.window?` / ${tokens(ctx.window)}`:''}</span>}
     </button>
     {open&&<div className="usage-pop" role="dialog" aria-label={t('shared.usage.dialog_label')}>
       <section>
@@ -63,6 +64,10 @@ export function UsageRing({identity, sessionId, status}:{identity:string; sessio
             ?(ctx.approx?t('shared.usage.tokens_approx',{used:tokens(ctx.used),window:tokens(ctx.window),pct:pct??0}):t('shared.usage.tokens_exact',{used:tokens(ctx.used),window:tokens(ctx.window),pct:pct??0}))
             :t('shared.usage.tokens_only',{used:tokens(ctx.used)})}</p></>
           :<p className="small muted">{t('shared.usage.no_context')}</p>}
+      </section>
+      <section>
+        <h4>{t('shared.usage.mcp_heading')}</h4>
+        <p className="small muted">{t('shared.usage.mcp_off')}</p>
       </section>
       <section>
         <h4>{t('shared.usage.quota_heading')}{q?.account.checked_at?<span className="muted small"> · {new Date(q.account.checked_at*1000).toLocaleTimeString(locale,{hour:'2-digit',minute:'2-digit'})}</span>:null}</h4>

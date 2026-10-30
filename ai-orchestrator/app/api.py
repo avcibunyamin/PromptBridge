@@ -206,6 +206,28 @@ class _LoopbackOnlyMiddleware:
         await self.app(scope, receive, send)
 
 
+class _NoFramingMiddleware:
+    """K-066: the panel and API are never shown inside a frame. The preview iframe has allow-same-origin, so a
+    project that redirects its frame to this origin must not get a same-origin (sandbox-escaping) frame."""
+
+    HEADERS = [(b"content-security-policy", b"frame-ancestors 'none'"), (b"x-frame-options", b"DENY")]
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def framed(message):
+            if message["type"] == "http.response.start":
+                message = {**message, "headers": [*message.get("headers", []), *self.HEADERS]}
+            await send(message)
+
+        await self.app(scope, receive, framed)
+
+
 def create_app(static_dir: Path | None = None) -> FastAPI:
     app = FastAPI(
         title="Conductor API",
@@ -295,6 +317,26 @@ def create_app(static_dir: Path | None = None) -> FastAPI:
         from . import doctor
         results = doctor.checks(_root(), server=False)
         return {"checks": results, "ok": not any(item['level'] == 'FAIL' for item in results)}
+
+
+    @app.get("/api/host")
+    def host(request: Request):
+        """K-059: who and where, for the panel's profile button. The Mac only; a phone never gets it."""
+        if getattr(request.state, "conductor_mobile_device", None):
+            raise HTTPException(404, detail="not found")
+        import platform
+        import pwd
+        import socket
+        entry = pwd.getpwuid(os.getuid())
+        try:
+            computer = subprocess.run(["/usr/sbin/scutil", "--get", "ComputerName"], capture_output=True,
+                                      text=True, timeout=2).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            computer = ""
+        mac = platform.mac_ver()[0]
+        return {"user": (entry.pw_gecos or "").split(",")[0].strip() or entry.pw_name, "login": entry.pw_name,
+                "computer": computer or socket.gethostname().removesuffix(".local"),
+                "system": f"macOS {mac}" if mac else platform.system()}
 
 
     @app.get("/api/envelopes")
@@ -481,6 +523,7 @@ def create_app(static_dir: Path | None = None) -> FastAPI:
         if _assets.exists():
             app.mount("/assets", _AssetsStaticFiles(directory=str(_assets)), name="assets")
 
+    app.add_middleware(_NoFramingMiddleware)
     app.add_middleware(_LoopbackOnlyMiddleware)
     return app
 

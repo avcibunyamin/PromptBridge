@@ -127,8 +127,8 @@ class ContextTests(unittest.IsolatedAsyncioTestCase):
         def factory(p):
             f=Fake(context() if not calls else success(),delay=.3); calls.append(f); return f
         await SessionRunner(self.db,adapter_factory=factory,step_timeout=.45).run_session('s')
-        self.assertEqual(self.status(),'FAILED'); self.assertEqual(len(calls),2)
-        self.assertIn('timed out',repo.get_session_steps(self.conn,'s')[0]['terminal_reason'])
+        self.assertEqual(self.status(),'WAITING_HUMAN'); self.assertEqual(len(calls),2)   # K-061: resumable
+        self.assertEqual(repo.get_session_steps(self.conn,'s')[0]['terminal_reason'],'step_timeout')
 
     async def test_cancel_during_digest_prevents_next_process(self):
         self.create(); runner=SessionRunner(self.db,adapter_factory=lambda _:Fake(context()))

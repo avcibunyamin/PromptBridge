@@ -8,7 +8,7 @@ from fastapi.responses import StreamingResponse
 from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from app import store, runner_store as repo, works_store as ws
-from app.provider_policy import load_config, effective, team_problems, digest, kind
+from app.provider_policy import load_config, effective, team_problems, digest, kind, read_only
 from app.security import mutation_guard
 
 router = APIRouter(prefix='/api/works')
@@ -43,6 +43,7 @@ class AddMessage(BaseModel):
     wait_deadline_hours: int = Field(4, ge=1, le=24, strict=True)
     wait_max_attempts: int = Field(3, ge=1, le=5, strict=True)
     recipe: str | None = Field(None, max_length=32)
+    read_only: bool = Field(False, strict=True)   # K-057: the author may not change files either
 
 
 class PatchWork(BaseModel):
@@ -121,10 +122,10 @@ def create_work(body: CreateWork, request: Request, response: Response):
 
 @router.get('')
 def list_works(request: Request, archived: bool = False, cursor: str | None = None,
-               limit: int = Query(50, ge=1, le=100)):
+               limit: int = Query(50, ge=1, le=100), q: str | None = Query(None, max_length=200)):
     conn = _db(request)
     try:
-        return ws.list_works(conn, archived=archived, cursor=cursor, limit=limit)
+        return ws.list_works(conn, archived=archived, cursor=cursor, limit=limit, q=q)
     except ws.WorkError as exc:
         raise _fail(exc) from exc
     finally:
@@ -201,9 +202,11 @@ def add_message(wid: str, body: AddMessage, request: Request, response: Response
                     policy = dict(policy, wait=wait)
                 if recipe_frozen:
                     policy = dict(policy, recipe=recipe_frozen)
+                if body.read_only:
+                    policy = read_only(policy)
             message, created = ws.add_message(conn, wid, str(body.client_message_id), body.text,
                                               body.policy_digest, policy, current_digest, team, wait,
-                                              body.recipe)
+                                              body.recipe, body.read_only)
     except ws.WorkError as exc:
         raise _fail(exc) from exc
     finally:

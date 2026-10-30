@@ -1,12 +1,18 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Copy, ExternalLink, Play, RefreshCw, Square } from 'lucide-react'
+import { useCallback, useEffect, useId, useState } from 'react'
+import { Copy, ExternalLink, Play, RefreshCw, Square, X } from 'lucide-react'
 import { approvePreview, previewStatus, restartPreview, startPreview, stopPreview, type PreviewStatus } from '../../api'
 import { say, t } from '../../i18n'
 import { PREVIEW_IFRAME_SANDBOX } from './previewRules'
 
 const basename = (p: string) => p.split(/[\\/]/).pop() || p
+// K-065: the address bar only moves within the preview's own server; '//other.host' or a full URL falls back to it.
+const samePage = (base: string, path: string) => {
+  try { const u = new URL(path.startsWith('/') ? path : '/' + path, base); return u.origin === new URL(base).origin ? u.href : base } catch { return base }
+}
 
-export function PreviewPanel({ workspacePath }: { workspacePath: string }) {
+export function PreviewPanel({ workspacePath, onClose }: { workspacePath: string; onClose?: () => void }) {
+  // K-065: an address bar over the running app; the path stays relative to the preview's own server.
+  const [path, setPath] = useState('/'), [frameKey, setFrameKey] = useState(0), pathId = useId()
   const [state, setState] = useState<PreviewStatus | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -41,6 +47,7 @@ export function PreviewPanel({ workspacePath }: { workspacePath: string }) {
   const server = state?.server
   const running = server?.status === 'running'
   const url = server?.url || suggestion?.url || ''
+  const pageUrl = url && samePage(url, path)
   const argv = suggestion?.argv ?? []
   const commandDigest = suggestion?.command_digest ?? ''
 
@@ -59,11 +66,13 @@ export function PreviewPanel({ workspacePath }: { workspacePath: string }) {
         <span className="d" aria-hidden="true" />{server.status === 'running' ? t('tools.preview.status.running') : server.status === 'failed' ? t('tools.preview.status.failed') : server.status === 'starting' ? t('tools.preview.status.starting') : t('tools.preview.status.stopped')}
       </span>}
       <button className="icon-btn" type="button" title={t('tools.preview.refresh')} aria-label={t('tools.preview.refreshAria')} disabled={busy} onClick={() => void refresh()}><RefreshCw aria-hidden /></button>
+      {onClose && <button className="icon-btn" type="button" title={t('work.previewClose')} aria-label={t('work.previewClose')} onClick={onClose}><X aria-hidden /></button>}
     </div>
     <div className="card-b preview-body">
       {error && <div className="error-banner" role="alert">{error}</div>}
       {!suggestion && !error && <p className="muted">{t('tools.preview.empty')}</p>}
-      {suggestion && <div className="preview-command">
+      {suggestion && running && <details className="preview-log"><summary>{suggestion.label}</summary><code className="mono small">{argv.join(' ')}</code></details>}
+      {suggestion && !running && <div className="preview-command">
         <div>
           <strong>{suggestion.label}</strong>
           <p className="muted small">{basename(suggestion.script_path)} · port {suggestion.port}</p>
@@ -91,10 +100,16 @@ export function PreviewPanel({ workspacePath }: { workspacePath: string }) {
         <button className="btn" type="button" disabled={busy || !server || !['running', 'starting'].includes(server.status)}
           onClick={() => void run(() => stopPreview(workspacePath))}><Square aria-hidden />{t('tools.preview.stop')}</button>
         <button className="btn" type="button" disabled={!url} onClick={() => void copyUrl()}><Copy aria-hidden />{copied ? t('tools.preview.copied') : t('tools.preview.copyUrl')}</button>
-        <button className="btn" type="button" disabled={!url} onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}><ExternalLink aria-hidden />{t('tools.preview.openBrowser')}</button>
+        <button className="btn" type="button" disabled={!url} onClick={() => window.open(pageUrl || url, '_blank', 'noopener,noreferrer')}><ExternalLink aria-hidden />{t('tools.preview.openBrowser')}</button>
       </div>
       {server?.error && <p className="notice">{server.error}</p>}
-      {running && server?.url && <iframe className="preview-frame" title={t('tools.preview.iframeTitle')} src={server.url} sandbox={PREVIEW_IFRAME_SANDBOX} />}
+      {running && server?.url && <form className="preview-address" onSubmit={e => { e.preventDefault(); setFrameKey(k => k + 1) }}>
+        <span className="mono small muted">{new URL(server.url).host}</span>
+        <label className="sr-only" htmlFor={pathId}>{t('tools.preview.path')}</label>
+        <input id={pathId} className="mono" value={path} onChange={e => setPath(e.target.value)} spellCheck={false} />
+        <button className="icon-btn" type="submit" title={t('tools.preview.reloadPage')} aria-label={t('tools.preview.reloadPage')}><RefreshCw aria-hidden /></button>
+      </form>}
+      {running && server?.url && <iframe key={frameKey} className="preview-frame" title={t('tools.preview.iframeTitle')} src={pageUrl} sandbox={PREVIEW_IFRAME_SANDBOX} />}
       {server?.log_tail && <details className="preview-log"><summary>{t('tools.preview.log')}</summary><pre>{server.log_tail}</pre></details>}
     </div>
   </section>

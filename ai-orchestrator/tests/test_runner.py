@@ -1,4 +1,5 @@
 import asyncio
+import json
 import tempfile
 import time
 import unittest
@@ -145,7 +146,46 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
         fake = Fake(delay=30)
         await SessionRunner(self.db, adapter_factory=lambda _: fake, step_timeout=.03).run_session('s')
         self.assertTrue(fake.closed)
-        self.assertEqual(self.status(), 'FAILED')
+        self.assertEqual(self.status(), 'WAITING_HUMAN')   # K-061: the last step ran out of time — resumable, not lost
+        self.assertEqual(repo.get_session_steps(self.conn, 's')[0]['terminal_reason'], 'step_timeout')
+        self.assertEqual(self.conn.execute('SELECT count(*) FROM workspace_locks').fetchone()[0], 0)
+        fake.delay = 0
+        repo.retry_session(self.conn, 's')   # "Tekrar dene" runs the step again on the folder as it is
+        await SessionRunner(self.db, adapter_factory=lambda _: fake, step_timeout=5).run_session('s')
+        self.assertEqual(self.status(), 'SUCCEEDED')
+
+    async def test_an_author_out_of_time_hands_over_to_the_reviewer(self):   # K-061
+        self.create(agents=('codex', 'claude', 'codex'))
+        slow, reviewer, author = Fake(delay=30), Fake(), Fake()
+        order = iter([slow, reviewer, author])
+        await SessionRunner(self.db, adapter_factory=lambda _: next(order), step_timeout=.05).run_session('s')
+        self.assertEqual(self.status(), 'SUCCEEDED')
+        steps = repo.get_session_steps(self.conn, 's')
+        self.assertEqual([(s['status'], s['terminal_reason']) for s in steps][0], ('COMPLETED', 'step_timeout'))
+        self.assertIn('TIME LIMIT REACHED', reviewer.calls[0][0])       # the reviewer is told, and reviews that state
+        self.assertEqual(len(author.calls), 1)                          # the correction author continued
+        event = json.loads(self.conn.execute("SELECT payload FROM session_events WHERE kind='step_timed_out'").fetchone()[0])
+        self.assertEqual((event['role'], event['continued']), ('author', True))
+        attempt = self.conn.execute("SELECT status, terminal_reason FROM session_attempts ORDER BY started_at LIMIT 1").fetchone()
+        self.assertEqual(tuple(attempt), ('FAILED', 'step_timeout'))
+
+    async def test_a_step_that_slept_past_its_limit_ends_on_wake(self):   # K-063
+        self.create()
+        fake = Fake(delay=30)
+        from app.runner import _clock as real_clock
+        with patch('app.runner.SLEEP_CHECK', .05), patch('app.runner._clock', side_effect=lambda: real_clock() + (0 if not fake.calls else 7200)):
+            await asyncio.wait_for(SessionRunner(self.db, adapter_factory=lambda _: fake, step_timeout=3600).run_session('s'), 5)
+        self.assertEqual(self.status(), 'WAITING_HUMAN')   # two hours "asleep": the step ended without its monotonic hour passing
+        self.assertTrue(fake.closed)
+
+    async def test_the_step_limit_comes_from_the_setting(self):   # K-061
+        runner = SessionRunner(self.db, adapter_factory=lambda _: Fake())
+        self.assertEqual(runner._step_seconds(), 45 * 60)
+        from app import user_settings
+        user_settings.path(self.db).write_text(json.dumps({'version': 1, 'step_minutes': 90}))
+        self.assertEqual(runner._step_seconds(), 90 * 60)
+        user_settings.path(self.db).write_text(json.dumps({'version': 1, 'step_minutes': 5}))   # out of range
+        self.assertEqual(runner._step_seconds(), 45 * 60)
 
     async def test_same_session_cannot_run_twice(self):
         self.create()

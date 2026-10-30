@@ -158,6 +158,10 @@ class DoctorTests(unittest.TestCase):
 
             mobile_client = TestClient(MobileState(app))
             self.assertEqual(mobile_client.get('/api/setup/checks').status_code, 404)
+            self.assertEqual(mobile_client.get('/api/host').status_code, 404)   # K-059: who/where stays on the Mac
+        host = TestClient(app).get('/api/host').json()
+        self.assertEqual(set(host), {'user', 'login', 'computer', 'system'})
+        self.assertTrue(host['user'] and host['login'] and host['computer'])
 
     def test_serve_loopback_host_only(self):
         from app import quota

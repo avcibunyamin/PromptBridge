@@ -25,12 +25,12 @@ class PreviewCoreTests(unittest.TestCase):
         pkg = {"scripts": {"dev": "vite --clearScreen false"}, "devDependencies": {"vite": "^5"}}
         (project / "package.json").write_text(json.dumps(pkg))
         with patch("app.preview._which", return_value="/usr/bin/npm"):
-            first = preview.detect(str(project), port=5173)
-            self.assertEqual(first["argv"], ["/usr/bin/npm", "run", "dev", "--", "--host", "127.0.0.1", "--port", "5173"])
+            first = preview.detect(str(project), port=5174)
+            self.assertEqual(first["argv"], ["/usr/bin/npm", "run", "dev", "--", "--host", "127.0.0.1", "--port", "5174"])
             self.assertEqual(first["env"]["HOST"], "127.0.0.1")
             pkg["scripts"]["dev"] = "vite --host 0.0.0.0"
             (project / "package.json").write_text(json.dumps(pkg))
-            second = preview.detect(str(project), port=5173)
+            second = preview.detect(str(project), port=5174)
         self.assertNotEqual(first["command_digest"], second["command_digest"])
 
     def test_package_json_scripts_order_truncation_and_stable_digest(self):
@@ -47,7 +47,7 @@ class PreviewCoreTests(unittest.TestCase):
         }
         pkg_file.write_text(json.dumps(pkg))
         with patch("app.preview._which", return_value="/usr/bin/npm"):
-            detected = preview.detect(str(project), port=5173)
+            detected = preview.detect(str(project), port=5174)
         self.assertEqual(detected["scripts"], [
             ["predev", "echo before"],
             ["dev", "vite --clearScreen false"],
@@ -56,8 +56,8 @@ class PreviewCoreTests(unittest.TestCase):
         expected_digest = preview._digest_payload({
             "workspace_path": str(project.resolve()),
             "kind": "vite",
-            "argv": ["/usr/bin/npm", "run", "dev", "--", "--host", "127.0.0.1", "--port", "5173"],
-            "env": {"HOST": "127.0.0.1", "PORT": "5173", "BROWSER": "none"},
+            "argv": ["/usr/bin/npm", "run", "dev", "--", "--host", "127.0.0.1", "--port", "5174"],
+            "env": {"HOST": "127.0.0.1", "PORT": "5174", "BROWSER": "none"},
             "script_path": "package.json",
             "script_digest": preview._sha_file(pkg_file),
         })

@@ -13,12 +13,16 @@ import json
 import logging
 import os
 from pathlib import Path
+import re
+import shlex
 import shutil
 import stat
+import subprocess
 import tempfile
 import threading
 import time
 from typing import Literal
+import unicodedata
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
@@ -160,6 +164,7 @@ def _list_accounts(db_path: Path, config: dict) -> list[dict]:
             'in_default_team': base in default_bases,
             'installed': bool(installed.get(provider, False)),
             'login': _login_info(db_path, provider, account),
+            'signed_in': catalog.signed_in(provider, account) if provider in ('agy', 'codex') else None,
         })
     return items
 
@@ -251,22 +256,36 @@ def _refresh_catalog_in_background(db_path: Path, config: dict) -> None:
 class AddAccountRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
     provider: Literal['agy', 'codex', 'claude', 'ollama']
-    account: str | None = None
+    account: str | None = Field(None, max_length=60)   # K-060: any name; the server derives the safe id
     roles: list[Literal['author', 'reviewer']] = Field(min_length=1)
+
+
+def account_id(name: str | None) -> str | None:
+    """K-060: a freely typed account name → the id used in folder names and `agy@id/model` (lower-case ASCII
+    letters, digits and dashes, at most 16). None for no name, '' when nothing usable is left."""
+    if name is None or not name.strip():
+        return None
+    text = unicodedata.normalize('NFKD', name.replace('ı', 'i').replace('İ', 'I')).encode('ascii', 'ignore').decode().lower()
+    return re.sub(r'[^a-z0-9]+', '-', text).strip('-')[:16].strip('-')
 
 
 def _validate_add_request(body: AddAccountRequest) -> tuple[str, str | None, list[str], str]:
     provider = body.provider
-    account = body.account
+    account = account_id(body.account)
+    unusable = HTTPException(422, detail={'code': 'validation_error', 'detail': 'Hesap adında en az bir harf ya da rakam olmalı'})
     if provider == 'agy':
-        if not account or not ACCOUNT_RE.fullmatch(account):
-            raise HTTPException(422, detail={'code': 'validation_error', 'detail': 'agy için geçerli bir hesap adı zorunludur'})
+        if account is None:
+            raise HTTPException(422, detail={'code': 'validation_error', 'detail': 'agy için bir hesap adı yazın'})
+        if not account:
+            raise unusable
     elif provider == 'codex':
-        if account is not None and not ACCOUNT_RE.fullmatch(account):
-            raise HTTPException(422, detail={'code': 'validation_error', 'detail': 'Geçersiz codex hesap adı'})
+        if account == '':
+            raise unusable
     else:
         if account is not None:
             raise HTTPException(422, detail={'code': 'validation_error', 'detail': f'{provider} hesap adı desteklemiyor'})
+    if account is not None and not ACCOUNT_RE.fullmatch(account):   # account_id always fits; kept as the guard
+        raise unusable
 
     roles = [r for r in ROLE_ORDER if r in body.roles]
     if not roles:
@@ -291,7 +310,7 @@ def add_account(body: AddAccountRequest, request: Request):
         config = _load_current_config(db_path)
         allowed = {r: list( items) for r, items in allowed_for(config).items()}
         if any(base_of(x) == base for r in PROFILES for x in allowed[r]):
-            raise HTTPException(409, detail={'code': 'exists', 'detail': f'{base} zaten tanımlı'})
+            raise HTTPException(409, detail={'code': 'exists', 'detail': f'Bu adda bir hesap zaten var ({base})'})
         for role in roles:
             allowed[role].append(base)
         new_config = dict(config, allowed=allowed)
@@ -308,6 +327,66 @@ def add_account(body: AddAccountRequest, request: Request):
     _refresh_catalog_in_background(db_path, validated)
     created = next((item for item in accounts if item['base'] == base), None)
     return {'account': created, 'accounts': accounts}
+
+
+def _configured(db_path: Path, base: str) -> tuple[str, str | None]:
+    """A sign-in can only be opened or checked for an account that is configured (agy or codex)."""
+    try:
+        provider, account, model, effort = split(base)
+    except ValueError as exc:
+        raise HTTPException(422, detail={'code': 'validation_error', 'detail': 'Geçersiz sağlayıcı tabanı'}) from exc
+    if model is not None or effort is not None or provider not in ('agy', 'codex') or (provider == 'agy' and not account):
+        raise HTTPException(422, detail={'code': 'login_unsupported', 'detail': 'Bu hesap için giriş burada açılmaz'})
+    allowed = allowed_for(_load_current_config(db_path))
+    if not any(base_of(x) == base for r in PROFILES for x in allowed[r]):
+        raise HTTPException(404, detail={'code': 'not_found', 'detail': f'{base} bulunamadı'})
+    return provider, account
+
+
+def _login_script(db_path: Path, provider: str, account: str | None) -> Path:
+    """K-060: a fixed `.command` file Terminal runs; only server-made paths go in it, quoted, never user text."""
+    _prepare_account_home(db_path, provider, account)   # agy: its own keychain is unlocked first (K-058)
+    if provider == 'agy':
+        body = f'cd /tmp || exit 1\nHOME={shlex.quote(agy_home(str(db_path), account))} exec {shlex.quote(agy_binary())}\n'
+    else:
+        body = f'CODEX_HOME={shlex.quote(str(codex_home(str(db_path), account)))} exec {shlex.quote(codex_binary())} login\n'
+    folder = db_path.parent / 'login'
+    folder.mkdir(mode=0o700, exist_ok=True)
+    if not stat.S_ISDIR(os.lstat(folder).st_mode):
+        raise HTTPException(422, detail={'code': 'validation_error', 'detail': 'login klasörü gerçek bir klasör değil'})
+    path = folder / f"{provider}-{account or 'default'}.command"
+    fd, tmp = tempfile.mkstemp(dir=folder, prefix='.login-', suffix='.tmp')
+    with os.fdopen(fd, 'w', encoding='utf-8') as f:
+        f.write(f'#!/bin/sh\n# PromptBridge: {provider} sign-in (K-060)\n{body}')
+    os.chmod(tmp, 0o700)
+    os.replace(tmp, path)
+    return path
+
+
+def _open_terminal(path: Path) -> None:
+    subprocess.run(['/usr/bin/open', '-a', 'Terminal', str(path)], check=True, capture_output=True, timeout=15)
+
+
+@router.post('/{base}/login', dependencies=[Depends(_loopback_only), Depends(mutation_guard)])
+def open_login(base: str, request: Request):
+    """K-060: opens the account's sign-in in Terminal (the person signs in there; nothing is typed for them)."""
+    db_path = _db_path(request)
+    provider, account = _configured(db_path, base)
+    try:
+        path = _login_script(db_path, provider, account)
+        _open_terminal(path)
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        raise HTTPException(409, detail={'code': 'login_open_failed', 'detail': f'Terminal açılamadı: {exc}'[:300]}) from exc
+    return {'opened': True}
+
+
+@router.post('/{base}/check', dependencies=[Depends(_loopback_only), Depends(mutation_guard)])
+def check_login(base: str, request: Request):
+    """K-060: is this account signed in now? Re-lists its models (no model turn) and refreshes its catalog part."""
+    db_path = _db_path(request)
+    provider, account = _configured(db_path, base)
+    signed_in, error = catalog.refresh_base(str(db_path), provider, account)
+    return {'signed_in': signed_in, 'error': error}
 
 
 @router.delete('/{base}', dependencies=[Depends(_loopback_only), Depends(mutation_guard)])

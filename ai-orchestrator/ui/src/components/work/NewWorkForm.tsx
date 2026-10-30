@@ -29,6 +29,7 @@ export function NewWorkForm({onCreated,folders,initial}:{onCreated:(workId:strin
       if(r.path)setWorkspace(r.path);else if(r.error)setError(t('work.new.folderDialogFailed',{error:r.error}))}
     catch(e){setError(String(e))}finally{setChoosing(false)}
   }
+  const [readOnly,setReadOnly]=useState(false)   // K-057: review/question only; no agent may change files
   const [isolate,setIsolate]=useState(initial?.isolate??false)   // TB-26 (K-034): run in a git worktree; the folder itself stays untouched
   // F3-03: acceptance is bound to the previewed digest of the selected team; a new selection drops it.
   const [policy,setPolicy]=useState<Policy|null>(null), [sel,setSel]=useState<TeamSelection|null>(null), [acceptedFor,setAcceptedFor]=useState<string|null>(null)
@@ -58,7 +59,7 @@ export function NewWorkForm({onCreated,folders,initial}:{onCreated:(workId:strin
     setBusy(false)
     if(r.kind==='opened'){
       const e=r.rejected   // the first message was definitely refused: the work view shows its text and the reason
-      if(e)rejectedFirst.set(r.workId,{text:p.message.text,message:String(e),code:e instanceof ApiError?e.code:undefined,team:p.message.team,wait})
+      if(e)rejectedFirst.set(r.workId,{text:p.message.text,message:String(e),code:e instanceof ApiError?e.code:undefined,team:p.message.team,wait,read_only:p.message.read_only})
       onCreated(r.workId);return
     }
     if(r.kind==='create_rejected'){setPending(null);setError(say(r.error))
@@ -74,7 +75,7 @@ export function NewWorkForm({onCreated,folders,initial}:{onCreated:(workId:strin
     if(r==='discarded'){setPending(null);return}
     if(r==='kept'){setError(t('work.new.discardKept'));return}
     // It was created after all; its first message was never sent. Open it with the text in the composer.
-    rejectedFirst.set(p.client_work_id,{text:p.message.text,message:t('work.new.createdNotSent'),team:p.message.team})
+    rejectedFirst.set(p.client_work_id,{text:p.message.text,message:t('work.new.createdNotSent'),team:p.message.team,read_only:p.message.read_only})
     onCreated(p.client_work_id)
   }
   // TB-19 K1: the default team saved in Settings was accepted there; another selection needs the box.
@@ -83,7 +84,7 @@ export function NewWorkForm({onCreated,folders,initial}:{onCreated:(workId:strin
   function submit(){
     if(!policy||!preview||!sel||!accepted||busy)return
     void run({client_work_id:newId(),title:deriveTitle(task),workspace_path:workspace.trim(),...(isolate?{isolate:true}:{}),
-      message:{client_message_id:newId(),text:task,policy_digest:preview.digest,team:sel.team,...wait}})
+      message:{client_message_id:newId(),text:task,policy_digest:preview.digest,team:sel.team,...wait,...(readOnly?{read_only:true}:{})}})
   }
 
   // K-041: `/` shortcuts in the first message (none starts the work); a hook, so before the early return (React #310)
@@ -143,6 +144,8 @@ export function NewWorkForm({onCreated,folders,initial}:{onCreated:(workId:strin
         <span>{t('work.new.acceptLead')} <span className="reaccept-chain">{chain}</span>{t('work.new.acceptTail',{loop:preview.policy.loop?t('work.new.acceptLoopPart'):''})}</span></label>}
       <label className="accept-row"><input type="checkbox" checked={isolate} onChange={e=>setIsolate(e.target.checked)}/>
         <span><strong>{t('work.new.isolateTitle')}</strong> {t('work.new.isolateBody')}</span></label>
+      <label className="accept-row"><input type="checkbox" checked={readOnly} onChange={e=>setReadOnly(e.target.checked)}/>
+        <span><strong>{t('work.readOnlyTitle')}</strong> {t('work.readOnlyBody')}</span></label>
       <details className="composer-more"><summary>{t('work.new.options')}</summary>
         <WaitOptions id="nw-wait" value={wait} onChange={setWait}/>
         <p className="chain-note">{t('work.new.chainNote',{count:(preview?.policy??policy?.policy)?.max_context_continuations??0})}</p>

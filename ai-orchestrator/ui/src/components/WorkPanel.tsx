@@ -1,6 +1,6 @@
 import { canCommand, mobile } from '../mobile'
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
-import { ChevronLeft, Pin, Plus } from 'lucide-react'
+import { ChevronLeft, Pin, Plus, Search } from 'lucide-react'
 import { deleteWork, isolationRemove, listWorks, listLegacySessions, patchWork, type Work, type WorksPage, type LegacySession } from '../api'
 import { locale, t } from '../i18n'
 import { deleteWorkErrorMessage, groupByProject, loadSettings, PINNED_WORKS_LIMIT, saveSettings, sortPinnedWorks, togglePinnedWork, workMenuItems, type WorkMenuAction } from '../settings'
@@ -42,6 +42,7 @@ export function WorkPanel({head,foot,top,override,onOpen}:{head?:ReactNode;foot?
   // K-044 / #310: all hooks are called unconditionally at the top of the component before any early return.
   const [route,setRoute]=useState<Route>(parseRoute)
   const [archived,setArchived]=useState(false)
+  const [query,setQuery]=useState(''), [q,setQ]=useState('')   // K-059: search box; `q` is what the list was asked for
   const [prefill,setPrefill]=useState<{workspace:string;isolate:boolean}|null>(null)   // K-055: “new branch” of a project
   const [formSeq,setFormSeq]=useState(0)   // each “Yeni çalışma” / “+” starts a fresh form
   const [works,setWorks]=useState<Work[]>([]), [page,setPage]=useState<Omit<WorksPage,'items'>|null>(null), [pages,setPages]=useState(0)
@@ -52,7 +53,8 @@ export function WorkPanel({head,foot,top,override,onOpen}:{head?:ReactNode;foot?
   const [renamingId,setRenamingId]=useState<string|null>(null), [renameTitle,setRenameTitle]=useState(''), [renameBusy,setRenameBusy]=useState(false)
   const [removingIso,setRemovingIso]=useState<Work|null>(null), [removeIsoBusy,setRemoveIsoBusy]=useState(false), [removeIsoError,setRemoveIsoError]=useState('')
   const [deleting,setDeleting]=useState<Work|null>(null), [deleteBusy,setDeleteBusy]=useState(false), [deleteError,setDeleteError]=useState('')
-  const filterRef=useRef(archived); filterRef.current=archived   // drops answers for a filter no longer shown
+  const listKey=`${archived}|${q}`
+  const filterRef=useRef(listKey); filterRef.current=listKey   // drops answers for a filter or search no longer shown
   // the phone's back button steps history once when we came from the list (Android back agrees), else goes to it
   const fromList=useRef(false)
   const menuRef=useRef<HTMLDivElement|null>(null)
@@ -64,18 +66,19 @@ export function WorkPanel({head,foot,top,override,onOpen}:{head?:ReactNode;foot?
   const back=()=>{if(fromList.current){fromList.current=false;history.back()}else go({kind:'home'})}
 
   const refreshWorks=useCallback(async()=>{
-    try{const first=await listWorks(archived);if(filterRef.current!==archived)return
+    try{const first=await listWorks(archived,null,q);if(filterRef.current!==`${archived}|${q}`)return
       setWorks(w=>mergeFirst(w,first.items,pages));setPage(p=>pages<=1||!p?first:{...first,next_cursor:p.next_cursor});setPages(n=>Math.max(n,1));setListError('')
     }catch(e){setListError(String(e))}
-  },[archived,pages])
+  },[archived,q,pages])
   const refreshLegacy=useCallback(async()=>{
     try{const first=await listLegacySessions()
       setLegacy(l=>mergeFirst(l,first.items,legacyPages));if(legacyPages<=1)setLegacyCursor(first.next_cursor);setLegacyPages(n=>Math.max(n,1))
     }catch(e){setListError(String(e))}
   },[legacyPages])
 
-  // Switching the archive filter starts a fresh keyset listing.
-  useEffect(()=>{setWorks([]);setPage(null);setPages(0);setMenuId(null);setRenamingId(null)},[archived])
+  // Switching the archive filter or the search starts a fresh keyset listing.
+  useEffect(()=>{setWorks([]);setPage(null);setPages(0);setMenuId(null);setRenamingId(null)},[archived,q])
+  useEffect(()=>{const id=setTimeout(()=>setQ(query.trim()),250);return()=>clearTimeout(id)},[query])
   useEffect(()=>{void refreshWorks();const t=setInterval(()=>void refreshWorks(),5000);return()=>clearInterval(t)},[refreshWorks])
   useEffect(()=>{void refreshLegacy();const t=setInterval(()=>void refreshLegacy(),15000);return()=>clearInterval(t)},[refreshLegacy])
   useEffect(()=>{void loadSettings().then(v=>{if(v?.settings.pinned_works)setPinnedIds(v.settings.pinned_works)})},[])
@@ -111,7 +114,7 @@ export function WorkPanel({head,foot,top,override,onOpen}:{head?:ReactNode;foot?
   },[renamingId])
 
   async function moreWorks(){if(!page?.next_cursor)return;setLoadingMore(true);try{
-    const next=await listWorks(archived,page.next_cursor);if(filterRef.current!==archived)return
+    const next=await listWorks(archived,page.next_cursor,q);if(filterRef.current!==`${archived}|${q}`)return
     setWorks(w=>{const ids=new Set(w.map(x=>x.id));return [...w,...next.items.filter(x=>!ids.has(x.id))]});setPage(next);setPages(n=>n+1)
   }catch(e){setListError(String(e))}finally{setLoadingMore(false)}}
   async function moreLegacy(){if(!legacyCursor)return;setLoadingMore(true);try{
@@ -257,6 +260,9 @@ export function WorkPanel({head,foot,top,override,onOpen}:{head?:ReactNode;foot?
   return <div className="body work-layout" data-pane={!override&&route.kind==='home'?'list':'detail'}><aside className="sidebar work-sidebar">
     {head}
     <div className="side-head">{canCommand()&&<button className="newwork" onClick={()=>{setPrefill(null);setFormSeq(n=>n+1);go({kind:'new'})}}><Plus size={16} aria-hidden/>{t('shell.work.new')}</button>}</div>
+    <label className="side-search"><Search size={14} aria-hidden/><span className="sr-only">{t('shell.work.search')}</span>
+      <input type="search" value={query} placeholder={t('shell.work.search')} onChange={e=>setQuery(e.target.value)}
+        onKeyDown={e=>{if(e.key==='Escape'&&query){e.preventDefault();setQuery('')}}}/></label>
     <p className="nav-label d-only">{t('shell.work.recentUpper')}</p>
     <div className="side-filter" role="group" aria-label={t('shell.work.filterLabel')}>
       <button aria-pressed={!archived} onClick={()=>setArchived(false)}>{t('shell.work.filterActive')}{page?` (${page.counts.active})`:''}</button>
@@ -304,7 +310,8 @@ export function WorkPanel({head,foot,top,override,onOpen}:{head?:ReactNode;foot?
               onClick={e=>{e.stopPropagation();onMenuAction(w,act)}}>{MENU_LABELS[act]}</button>)}
           </div>}
         </div>})}</div>)}
-      {page&&!works.length&&<p className="empty-list">{archived?t('shell.work.emptyArchived'):<>{t('shell.work.emptyActiveLine1')}<br/>{t('shell.work.emptyActiveLine2')}</>}</p>}
+      {page&&!works.length&&q&&<p className="empty-list">{t('shell.work.noMatch',{q})}</p>}
+      {page&&!works.length&&!q&&<p className="empty-list">{archived?t('shell.work.emptyArchived'):<>{t('shell.work.emptyActiveLine1')}<br/>{t('shell.work.emptyActiveLine2')}</>}</p>}
       {!page&&!listError&&<p className="loading">{t('shell.loading')}</p>}
       {page?.next_cursor&&<button className="btn small more" disabled={loadingMore} onClick={()=>void moreWorks()}>{t('shell.work.more')}</button>}
     </nav>

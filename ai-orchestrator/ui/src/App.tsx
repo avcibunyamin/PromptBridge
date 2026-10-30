@@ -3,7 +3,8 @@ import { listAccounts, listEnvelopes, listWorks, reconcile, type Envelope } from
 import { WorkPanel } from './components/WorkPanel'
 import { OverviewPage } from './components/OverviewPage'
 import { HASHES, initialView, viewAfterHashChange, type View } from './views.ts'
-import { ChevronRight, FileCheck2, LayoutDashboard, ListChecks, MessagesSquare, RefreshCw, Settings2 } from 'lucide-react'
+import { ChevronRight, RefreshCw } from 'lucide-react'
+import { ProfileMenu } from './components/ProfileMenu'
 import { EnvelopeList } from './components/EnvelopeList'
 import { EnvelopeDetail } from './components/EnvelopeDetail'
 import { SettingsPage } from './components/SettingsPage'
@@ -95,11 +96,11 @@ function Shell() {
     document.documentElement.dataset.theme = shown
     try { localStorage.setItem('conductor-theme', theme) } catch { /* Theme still works in memory. */ }
   }, [theme, shown])
-  const toggleTheme = () => {
-    const next: Theme = shown === 'dark' ? 'light' : 'dark'
+  const chooseTheme = (next: Theme) => {
     setTheme(next)
     if (canCommand()) void saveSettings({ theme: next }).catch(() => {})
   }
+  const toggleTheme = () => chooseTheme(shown === 'dark' ? 'light' : 'dark')
   // TB-20: no top bar; brand on top of the sidebar, approvals / settings / theme / version at its foot (like Claude).
   const [waiting, setWaiting] = useState(0)
   useEffect(() => {
@@ -108,27 +109,8 @@ function Shell() {
   }, [])
   const open = (v: View, hash: string = v === 'work' ? '#/' : HASHES[v]) => { setView(v); setSettingsSub(settingsSubpath(hash)); if (location.hash !== hash) location.hash = hash }
   const openSetup = () => { setSetup(true); if (location.hash !== '#/setup') location.hash = '#/setup' }
-  const item = (v: View, icon: JSX.Element, extra?: JSX.Element) =>
-    <button className="nav-item" aria-current={!setup && view === v ? 'page' : undefined} onClick={() => open(v)}>{icon}{PAGES[v]}{extra}</button>
-  const head = <>
-    <div className="brand side-brand"><img className="mark" src="/ui/logo.svg" alt="" width={24} height={24} />PromptBridge</div>
-    {/* K-040: ZeroCost's desktop sidebar — where it runs, then the control centre's sections, then recent works */}
-    <div className="host-card d-only" title={location.host}>
-      <span className="host-mono">P</span>
-      <span><strong>{t('shell.host.thisMac')}</strong><span role="status">{version ? t('shell.host.connected') : t('shell.host.waiting')}</span></span>
-      <span className={'status-dot' + (version ? ' online' : '')} aria-hidden />
-    </div>
-    <p className="nav-label d-only">{t('shell.nav.controlCenterUpper')}</p>
-    <nav className="nav-main d-only" aria-label={t('shell.nav.controlCenter')}>
-      {item('overview', <LayoutDashboard aria-hidden />)}
-      {item('work', <MessagesSquare aria-hidden />)}
-      {item('bridge', <FileCheck2 aria-hidden />, waiting ? <span className="nav-count">{waiting}</span> : undefined)}
-      {item('settings', <Settings2 aria-hidden />)}
-      {!mobile.active && <button className="nav-item" aria-current={setup ? 'page' : undefined} onClick={openSetup}>
-        <ListChecks aria-hidden />{t('shell.wizard.open')}{setupNeeded && <span className="setup-nav-dot" aria-label={t('shell.wizard.incomplete')} />}
-      </button>}
-    </nav>
-  </>
+  // K-059: the brand on top; the control centre moved into the profile menu at the foot (like Claude)
+  const head = <div className="brand side-brand"><img className="mark" src="/ui/logo.svg" alt="" width={24} height={24} />PromptBridge</div>
   const top = <header className="topbar d-only">
     <div className="crumbs"><span>{t('shell.nav.controlCenter')}</span><ChevronRight aria-hidden /><strong>{setup ? t('shell.wizard.open') : PAGES[view]}</strong></div>
     <div className="topbar-right">
@@ -142,7 +124,9 @@ function Shell() {
     <button className="m-only" aria-current={view === 'work' ? 'page' : undefined} onClick={() => open('work')}>{t('shell.nav.work')}</button>
     <button aria-current={view === 'bridge' ? 'page' : undefined} onClick={() => open(view === 'bridge' ? 'work' : 'bridge')}>{t('shell.nav.bridge')}{waiting ? <span className="count">{waiting}</span> : null}</button>
     <button aria-current={view === 'settings' ? 'page' : undefined} onClick={() => open(view === 'settings' ? 'work' : 'settings')}>{t('shell.nav.settings')}</button>
-    <div className="side-meta">
+    <ProfileMenu view={view} setup={setup} waiting={waiting} setupNeeded={setupNeeded} theme={theme} version={version}
+      onOpen={v => { setSetup(false); open(v) }} onSetup={openSetup} onTheme={chooseTheme} />
+    <div className="side-meta m-only">
       <button className="icon-btn" aria-label={shown === 'dark' ? t('shell.theme.toLight') : t('shell.theme.toDark')} title={t('shell.theme.toggleTitle')} onClick={toggleTheme}>{shown === 'dark' ? '☀' : '☾'}</button>
       {version && <span className="host mono" title={t('shell.version.title', { host: location.host })}>{t('shell.version.label', { commit: version.commit, schema: version.schema ?? '?' })}</span>}
     </div>

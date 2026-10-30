@@ -30,6 +30,24 @@ class BudgetExhausted(Exception):
     """F3-02: the accepted active-time budget ran out (a clean stop, not a failure)."""
 
 
+class StepTimeout(TimeoutError):
+    """K-061: one provider step ran past the step limit; its process group was stopped by the wait's finally."""
+
+
+STEP_MINUTES = 45   # K-061: default; Ayarlar can set 10..180
+SLEEP_CHECK = 30    # K-063: seconds between sleep-inclusive checks of the step limit
+QUOTA_SKIP_MINUTES = 60   # K-067: a chain entry with a verified quota error this recent is skipped (ponytail: fixed window)
+
+
+def _clock():
+    """K-063: seconds that keep counting while the Mac sleeps (macOS CLOCK_MONOTONIC; time.monotonic stops) and
+    ignore wall-clock changes; time.time only where that clock is missing."""
+    return time.clock_gettime(time.CLOCK_MONOTONIC) if hasattr(time, 'CLOCK_MONOTONIC') else time.time()
+TIMEOUT_NOTE = ('TIME LIMIT REACHED: the author was stopped after {minutes} min before it finished. Its changes so far '
+                'are in the workspace and the work may be incomplete. Review the current state and list what is '
+                'still missing; the next author step continues from here.')
+
+
 def _get_adapter(identity, db_path):
     agent_name = provider_kind(identity)
     if agent_name == 'codex':
@@ -50,10 +68,10 @@ def _get_adapter(identity, db_path):
 
 
 class SessionRunner:
-    def __init__(self, db_path, *, adapter_factory=None, step_timeout=600):
+    def __init__(self, db_path, *, adapter_factory=None, step_timeout=None):
         self.db_path = db_path
         self.adapter_factory = adapter_factory or (lambda name: _get_adapter(name, db_path))
-        self.step_timeout = step_timeout
+        self.step_timeout = step_timeout   # seconds; None = the step_minutes setting, read at each step (K-061)
         self._cancel_events = {}
         # ponytail: tek süreç; çok süreçli sunucu olursa dosya kilidi
         self._account_locks = {}
@@ -153,13 +171,15 @@ class SessionRunner:
                 if previous is not None:
                     prompt += '\n\nOriginal goal:\n'+original+'\n\nPrevious output:\n'+previous
                 chain = policy['roles'][role]
-                deadline = time.monotonic()+self.step_timeout
+                step_seconds = self._step_seconds()
+                deadline = time.monotonic()+step_seconds
+                wall_deadline = _clock()+step_seconds   # K-063: the Mac's sleep counts too (time.monotonic stops in sleep)
                 handoff = None
                 repo.update_step_status(conn,step['id'],'RUNNING')
                 if loop is not None:
                     open_seg, seg_t0 = loop_store.open_segment(conn, session_id, step['id']), time.monotonic()
                     beat = asyncio.create_task(self._heartbeat(conn, open_seg, seg_t0))
-                chain_index, prepared, continuation_prompt = 0, None, None
+                chain_index, prepared, continuation_prompt = repo.skip_exhausted(conn, session_id, step['id'], chain, role, QUOTA_SKIP_MINUTES), None, None
                 step_checks = None   # TB-27/28: tests and lint run once per reviewer step; a quota handoff reuses them
                 followup_used = False
                 transient_used = False
@@ -181,7 +201,7 @@ class SessionRunner:
                         # The cross-run seed is single-use and only for step 1's first Codex attempt.
                         seed_used = True
                         # decide_resume already tied the seed to this exact identity (chain[0]).
-                        if seed and prepared is None and handoff is None and role == 'author' and provider_kind(provider) == 'codex' and profile == 'WRITE':
+                        if seed and chain_index == 0 and prepared is None and handoff is None and role == 'author' and provider_kind(provider) == 'codex' and profile == 'WRITE':
                             provider_sid = seed
                     instruction_trace = None
                     instruction_section = None
@@ -218,7 +238,8 @@ class SessionRunner:
                                                                     checks=step_checks if kind == 'REVIEWER' else None,
                                                                     changed=work_prompt.changed_files(differences(baseline,before))
                                                                     if kind in work_prompt.CHANGED_KINDS else None,
-                                                                    recipe=policy.get('recipe'))
+                                                                    recipe=policy.get('recipe'),
+                                                                    read_only=policy.get('read_only') is True)
                         except work_prompt.PromptTooLarge as exc:
                             return self._prompt_rejected(conn,session_id,step,prepared,exc.info)
                     effective_prompt = prompt
@@ -281,6 +302,7 @@ class SessionRunner:
                                 await asyncio.gather(acquire_task, wait_cancel, return_exceptions=True)
                             waited = time.monotonic() - wait_t0
                             deadline += waited
+                            wall_deadline += waited
                             if budget_deadline is not None:
                                 budget_deadline += waited
                             repo.checkpoint(conn, session_id, step['id'], 'account_acquired',
@@ -294,12 +316,17 @@ class SessionRunner:
                                       adapter,effective_prompt,workspace,provider_sid,profile))
                         cancelled = asyncio.create_task(cancel_event.wait())
                         try:
-                            done,_ = await asyncio.wait([job,cancelled],timeout=max(0,self._limit(deadline,budget_deadline)-time.monotonic()),
-                                                         return_when=asyncio.FIRST_COMPLETED)
+                            while True:   # K-063: wake at least every SLEEP_CHECK s, so a step that slept past its limit ends
+                                left = self._limit(deadline,budget_deadline)-time.monotonic()
+                                wall_left = wall_deadline-_clock()
+                                done,_ = await asyncio.wait([job,cancelled],timeout=max(0,min(left,wall_left,SLEEP_CHECK)),
+                                                             return_when=asyncio.FIRST_COMPLETED)
+                                if done or left <= 0 or wall_left <= 0:
+                                    break
                             if cancel_event.is_set():
                                 raise asyncio.CancelledError
                             if job not in done:
-                                raise self._deadline_error(deadline,budget_deadline)
+                                raise self._deadline_error(deadline,budget_deadline)   # a spent loop budget first, else StepTimeout
                             result = await job
                         finally:
                             cancelled.cancel()
@@ -377,7 +404,7 @@ class SessionRunner:
                                         project_instructions=instruction_section,
                                         changed=work_prompt.changed_files(differences(baseline,after))
                                         if fresh_kind in work_prompt.CHANGED_KINDS else None,
-                                        recipe=policy.get('recipe'))
+                                        recipe=policy.get('recipe'), read_only=policy.get('read_only') is True)
                                     continuation_prompt = fresh_prompt + '\n\n' + continuation_prompt
                                     work_prompt.gate(continuation_prompt)
                                     repo.checkpoint(conn, session_id, step['id'], 'work_continuation_prompt',
@@ -464,6 +491,30 @@ class SessionRunner:
                              'role':role,'profile':profile,'reason':'QUOTA_EXCEEDED','package':handoff})
                     chain_index += 1
                     continuation_prompt = None
+                except StepTimeout:
+                    # K-061: the wait's finally stopped the attempt (a cleanup failure would have raised
+                    # ProcessCleanupError instead → RECOVERY_REQUIRED). Nothing is lost: the work stays in the folder.
+                    owner = aid and conn.execute('SELECT status FROM process_owners WHERE attempt_id=?',(aid,)).fetchone()
+                    if owner and owner[0] != 'STOPPED':   # no owner row: no process was ever started
+                        raise ProcessCleanupError('timed-out attempt without confirmed process cleanup')
+                    minutes = max(1, round(step_seconds/60))
+                    later = loop_role == 'author' if loop is not None else (
+                        role == 'author' and step['step_index'] < max(s['step_index'] for s in steps))
+                    with transaction(conn):
+                        if aid:
+                            repo.end_attempt(conn,aid,'FAILED',reason='step_timeout')
+                        repo.checkpoint(conn,session_id,step['id'],'step_timed_out',
+                                        {'attempt_id':aid,'role':role,'minutes':minutes,'continued':later})
+                        if later:   # the team goes on: the reviewer sees this state, the next author continues
+                            previous = TIMEOUT_NOTE.format(minutes=minutes)
+                            repo.update_step_status(conn,step['id'],'COMPLETED',result_text=previous,is_error=0,
+                                                    terminal_reason='step_timeout')
+                        else:
+                            repo.update_step_status(conn,step['id'],'FAILED',is_error=1,terminal_reason='step_timeout')
+                            repo.update_session_status(conn,session_id,'WAITING_HUMAN')
+                    if not later:
+                        return
+                    current_run[self._run_key(conn, step, loop)] = previous
                 except BudgetExhausted:
                     # Clean stop (the attempt's process group was reaped by the wait's finally; a
                     # cleanup failure would have raised ProcessCleanupError instead → RECOVERY_REQUIRED).
@@ -569,6 +620,13 @@ class SessionRunner:
         if segment:
             loop_store.settle(conn, segment, (time.monotonic() - t0) * 1000)
 
+    def _step_seconds(self):
+        if self.step_timeout is not None:
+            return self.step_timeout
+        from app import user_settings
+        minutes = user_settings.load(self.db_path)[0].get('step_minutes')
+        return (minutes if isinstance(minutes, int) and 10 <= minutes <= 180 else STEP_MINUTES) * 60
+
     @staticmethod
     def _limit(deadline, budget_deadline):
         return deadline if budget_deadline is None else min(deadline, budget_deadline)
@@ -577,7 +635,7 @@ class SessionRunner:
     def _deadline_error(deadline, budget_deadline):
         if budget_deadline is not None and budget_deadline <= deadline and time.monotonic() >= budget_deadline:
             return BudgetExhausted('active-time budget exhausted')
-        return TimeoutError('provider step timed out')
+        return StepTimeout('provider step timed out')
 
     @classmethod
     def _check_deadline(cls, deadline, budget_deadline):
@@ -692,7 +750,7 @@ class SessionRunner:
                                 repo.record_owner(conn,aid,owner)
                             elif kind=='process_stopped':
                                 repo.record_owner(conn,aid,event['ownership'],stopped=True)
-                            elif kind in ('started','approval_required','command_result','process_group_snapshot'):
+                            elif kind in ('started','approval_required','command_result','process_group_snapshot','activity'):
                                 payload={k:v for k,v in event.items() if k!='type'}
                                 payload['attempt_id']=aid
                                 repo.checkpoint(conn,sid,step_id,kind,payload)

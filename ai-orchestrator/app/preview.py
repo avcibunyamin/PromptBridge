@@ -6,9 +6,11 @@ process groups for shutdown/recovery.
 """
 from __future__ import annotations
 
+import ast
 import asyncio
 import hashlib
 import json
+import re
 import os
 import tempfile
 from pathlib import Path
@@ -19,6 +21,7 @@ import time
 from typing import Any
 from urllib.parse import urlsplit
 
+from app.security import ALLOWED_ORIGINS
 from app import store
 from app.adapters import process as proc
 
@@ -78,8 +81,17 @@ def _port_available(port: int) -> bool:
         return sock.connect_ex(("127.0.0.1", port)) != 0
 
 
+# K-066: a preview whose origin the panel trusts (ALLOWED_ORIGINS: the panel and its Vite dev server) could send
+# mutating requests that mutation_guard accepts; with allow-same-origin its iframe would act as that origin too.
+RESERVED_PORTS = frozenset(urlsplit(o).port for o in ALLOWED_ORIGINS)
+
+
 def _choose_port(default: int) -> int:
-    return default if _port_available(default) else free_port()
+    if default not in RESERVED_PORTS and _port_available(default):
+        return default
+    while (port := free_port()) in RESERVED_PORTS:
+        pass
+    return port
 
 
 def _which(name: str) -> str | None:
@@ -136,6 +148,17 @@ def _package_json(root: Path, port: int | None) -> dict[str, Any] | None:
     }
 
 
+def _declares(source: str, flag: str) -> bool:
+    """A real argparse `add_argument(...)` or click `option(...)` call names the flag (comments and strings do not)."""
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return False
+    return any(isinstance(node, ast.Call) and getattr(node.func, "attr", getattr(node.func, "id", None)) in ("add_argument", "option")
+               and any(isinstance(a, ast.Constant) and a.value == flag for a in node.args)
+               for node in ast.walk(tree))
+
+
 def _python_project(root: Path, port: int | None) -> dict[str, Any] | None:
     py = sys.executable
     port = port or _choose_port(8000)
@@ -161,10 +184,16 @@ def _python_project(root: Path, port: int | None) -> dict[str, Any] | None:
             "script_digest": _sha_file(app_file),
         }
     if app_file:
+        # K-065: many scripts take their port as a flag, not from PORT (ReelsVideo listens on 8080 otherwise and the
+        # preview waits on the wrong port). ponytail: only argparse/click calls are matched (via ast); any other CLI
+        # parser still needs PORT.
+        source = app_file.read_text(errors="ignore")
+        flags = (["--host", "127.0.0.1"] if _declares(source, "--host") else []) + (
+            ["--port", str(port)] if _declares(source, "--port") else [])
         return {
             "kind": "python-http",
-            "label": f"python {app_file.name}",
-            "argv": [py, app_file.name],
+            "label": " ".join(["python", app_file.name, *flags]),
+            "argv": [py, app_file.name, *flags],
             "env": {"HOST": "127.0.0.1", "PORT": str(port)},
             "script_path": app_file.name,
             "script_digest": _sha_file(app_file),
@@ -190,6 +219,8 @@ def _static_site(root: Path, port: int | None) -> dict[str, Any] | None:
 
 def detect(path: str, *, port: int | None = None) -> dict[str, Any]:
     root = normalize_workspace(path)
+    if port in RESERVED_PORTS:
+        raise PreviewError("port_reserved", f"Port {port} PromptBridge paneline ayrılmış; başka bir port seçin", 409)
     suggestion = _package_json(root, port) or _python_project(root, port) or _static_site(root, port)
     if not suggestion:
         raise PreviewError("not_detected", "Desteklenen çalıştırma komutu algılanamadı", 404)

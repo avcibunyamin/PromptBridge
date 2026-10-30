@@ -35,6 +35,13 @@ if scenario == 'auth':
 print(json.dumps({'event': 'init', 'conversation_id': conv, 'init': {'tools': ['view_file', 'invoke_subagent'],
                   'model': 'gemini-3.8-flash-high' if scenario == 'wrong_model' else model}}), flush=True)
 print(json.dumps({'event': 'step_update', 'step_update': {'conversation_id': conv, 'state': 'DONE'}}), flush=True)
+# K-061: a tool step as agy 1.x streams it (seen live): ACTIVE with its parameters, then DONE/ERROR
+print(json.dumps({'event': 'step_update', 'step_update': {'conversation_id': conv, 'state': 'ACTIVE', 'step_type': 'tool',
+    'tool_name': 'run_command', 'tool_info': {'name': 'run_command', 'parameters': {'CommandLine': 'npm   test'}}}}), flush=True)
+print(json.dumps({'event': 'step_update', 'step_update': {'conversation_id': conv, 'state': 'ACTIVE', 'step_type': 'tool',
+    'tool_name': 'write_to_file', 'tool_info': {'parameters': {'TargetFile': '/w/app.py', 'CodeContent': 'SECRET BODY'}}}}), flush=True)
+print(json.dumps({'event': 'step_update', 'step_update': {'conversation_id': conv, 'state': 'DONE', 'step_type': 'tool',
+    'tool_name': 'run_command'}}), flush=True)
 result = {'conversation_id': conv, 'status': 'SUCCESS', 'response': 'done', 'usage': {'total_tokens': 1}}
 if scenario == 'denied_command':
     result.update(response='', denied_actions=[{'action': 'command', 'display_name': 'RunCommand'}])
@@ -63,6 +70,8 @@ import time
 time.sleep(float(os.environ.get('FAKE_SECURITY_SLEEP', '0')))
 if args[0] == 'create-keychain' and not os.environ.get('FAKE_SECURITY_NOFILE'):
     open(args[-1], 'w').close()
+if args[0] == 'unlock-keychain' and not os.path.islink(args[-1]) and open(args[-1]).read() == 'locked':
+    sys.exit(51)   # K-058: a login.keychain-db macOS 27 has locked no longer takes the empty password
 sys.exit(1 if os.environ.get('FAKE_SECURITY_FAIL') == args[0] else 0)
 '''
 
@@ -97,6 +106,15 @@ class Base(unittest.IsolatedAsyncioTestCase):
 
 
 class Process(Base):
+    async def test_tool_steps_become_activity_without_contents(self):   # K-061
+        events, result = await self.run_agy()
+        self.assertTrue(result.successful)
+        self.assertEqual([(e['tool'], e['detail']) for e in events if e['type'] == 'activity'],
+                         [('run_command', 'npm test'), ('write_to_file', '/w/app.py')])
+        self.assertNotIn('SECRET BODY', json.dumps(events, default=str))
+        from app.adapters.agy import tool_detail
+        self.assertEqual(tool_detail({'parameters': {'Url': 'https://x/?token=abc', 'Query': 'secret'}}), '')   # review round 2
+
     async def test_argv_home_and_profiles(self):
         events, result = await self.run_agy(profile='WRITE', sid='conv-1')
         self.assertTrue(result.successful)
@@ -113,7 +131,7 @@ class Process(Base):
                             ('--print-timeout', '0'), ('--mode', 'accept-edits'), ('--conversation', 'conv-1')):
             self.assertEqual(argv[argv.index(flag) + 1], value)
         self.assertNotIn('--dangerously-skip-permissions', argv)
-        self.assertEqual([e['type'] for e in events], ['process_started', 'started', 'process_stopped', 'completed'])
+        self.assertEqual([e['type'] for e in events], ['process_started', 'started', 'activity', 'activity', 'process_stopped', 'completed'])
         await self.run_agy()
         self.assertNotIn('--mode', lines(self.agy_log)[1]['argv'])          # READ_ONLY: default request-review
 
@@ -122,8 +140,36 @@ class Process(Base):
         calls = [c['args'][0] for c in lines(self.sec_log)]
         self.assertEqual(calls, ['create-keychain', 'set-keychain-settings', 'unlock-keychain', 'unlock-keychain'])
         self.assertTrue(all(c['home'] == self.home for c in lines(self.sec_log)))
-        keychain = Path(self.home) / 'Library/Keychains/login.keychain-db'
+        keychain = Path(self.home) / 'Library/Keychains/agy.keychain-db'
         self.assertEqual(stat.S_IMODE(keychain.stat().st_mode), 0o600)
+        login = keychain.with_name('login.keychain-db')
+        self.assertEqual((os.readlink(login), {c['args'][-1] for c in lines(self.sec_log)}), ('agy.keychain-db', {str(keychain)}))
+
+    async def test_an_old_login_keychain_is_kept_while_it_unlocks_else_set_aside(self):   # K-058 (macOS 27)
+        keychains = Path(self.home) / 'Library/Keychains'; keychains.mkdir(parents=True)
+        login = keychains / 'login.keychain-db'; login.write_text('signed-in')
+        _, result = await self.run_agy()   # still unlocks (this login session): used as it is
+        self.assertFalse(result.is_error, result.terminal_reason)
+        self.assertEqual([c['args'][0] for c in lines(self.sec_log)], ['unlock-keychain'])
+        self.assertEqual((login.is_symlink(), login.read_text(), (keychains / 'agy.keychain-db').exists()), (False, 'signed-in', False))
+        self.sec_log.unlink(); login.write_text('locked')
+        _, result = await self.run_agy()   # locked: set aside (kept), a new keychain, sign in again
+        self.assertFalse(result.is_error, result.terminal_reason)
+        self.assertEqual([c['args'][0] for c in lines(self.sec_log)],
+                         ['unlock-keychain', 'create-keychain', 'set-keychain-settings', 'unlock-keychain'])
+        aside = list(keychains.glob('login.keychain-db.unopenable-*'))
+        self.assertEqual((len(aside), aside[0].read_text(), os.readlink(login)), (1, 'locked', 'agy.keychain-db'))
+        login.unlink()
+        outside = self.root / 'outside.keychain-db'; outside.write_text('theirs')
+        login.symlink_to(outside)   # a link elsewhere: refused, the target untouched
+        _, result = await self.run_agy()
+        self.assertEqual((result.terminal_reason, outside.read_text()), ('agy_home_unusable', 'theirs'))
+        for f in keychains.iterdir():
+            f.unlink()
+        keychains.rmdir(); elsewhere = self.root / 'elsewhere'; elsewhere.mkdir()
+        keychains.symlink_to(elsewhere)   # the keychain folder itself linked out: refused, nothing created there
+        _, result = await self.run_agy()
+        self.assertEqual((result.terminal_reason, list(elsewhere.iterdir())), ('agy_home_unusable', []))
 
     async def test_permissions_are_pinned_empty(self):
         settings = Path(self.home) / '.gemini/antigravity-cli/settings.json'
@@ -175,7 +221,7 @@ class Review(Base):
         with patch.dict(os.environ, {'FAKE_SECURITY_FAIL': 'create-keychain'}):
             _, result = await self.run_agy()           # create "failed" but the keychain exists
         self.assertTrue(result.successful)
-        os.remove(Path(self.home) / 'Library/Keychains/login.keychain-db')
+        os.remove(Path(self.home) / 'Library/Keychains/agy.keychain-db')   # K-058: the real file; login only points at it
         with patch.dict(os.environ, {'FAKE_SECURITY_FAIL': 'create-keychain', 'FAKE_SECURITY_NOFILE': '1'}):
             _, result = await self.run_agy()           # really failed: no process
         self.assertEqual(result.terminal_reason, 'agy_home_unusable')

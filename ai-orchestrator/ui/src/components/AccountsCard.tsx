@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { LoaderCircle, RefreshCw } from 'lucide-react'
 import {
-  ACCOUNT_NAME_RE,
+  accountId,
   PROVIDER_LABELS,
   PROVIDER_ORDER,
   ROLE_LABELS,
   formatAccountError,
   groupAccountsByProvider,
-  isValidAccountName,
   providerRequiresAccount,
   providerSupportsAccount,
   validateAccountInput,
@@ -22,15 +21,15 @@ import {
 import { addAccount, listAccounts, removeAccount } from '../api'
 import { t } from '../i18n'
 import { mobile } from '../mobile'
+import { SignIn } from './SignIn'
 
 export {
-  ACCOUNT_NAME_RE,
+  accountId,
   PROVIDER_LABELS,
   PROVIDER_ORDER,
   ROLE_LABELS,
   formatAccountError,
   groupAccountsByProvider,
-  isValidAccountName,
   providerRequiresAccount,
   providerSupportsAccount,
   validateAccountInput,
@@ -171,7 +170,13 @@ export function AccountsCard({ onChanged }: { onChanged?: () => void | Promise<v
           </div>
         )}
 
-        {justAdded && (
+        {justAdded && providerSupportsAccount(justAdded.provider) && (
+          <div className="notice account-added-banner" role="status">
+            <p>{t('settings.accounts.addedSignIn', { base: justAdded.base })}</p>
+            <SignIn key={justAdded.base} base={justAdded.base} autoStart onSignedIn={() => void onChanged?.()} />
+          </div>
+        )}
+        {justAdded && !providerSupportsAccount(justAdded.provider) && (
           <div className="notice account-added-banner" role="status">
             <p>
               {t('settings.accounts.added', { base: justAdded.base })}{' '}
@@ -244,9 +249,12 @@ export function AccountsCard({ onChanged }: { onChanged?: () => void | Promise<v
                           </div>
                         </div>
 
-                        <div className="mobile-cmd account-login">
-                          {item.login.command ? (
-                            <>
+                        {providerSupportsAccount(item.provider) && item.installed && justAdded?.base !== item.base
+                          && <SignIn base={item.base} compact signedIn={item.signed_in} onSignedIn={() => void onChanged?.()} />}
+                        {item.login.command ? (
+                          <details className="account-manual">
+                            <summary className="muted small">{t('settings.accounts.manualCommand')}</summary>
+                            <div className="mobile-cmd account-login">
                               <code className="mono">{item.login.command}</code>
                               <button
                                 type="button"
@@ -256,11 +264,11 @@ export function AccountsCard({ onChanged }: { onChanged?: () => void | Promise<v
                                 {copiedKey === item.base ? t('settings.accounts.copied') : t('settings.accounts.copy')}
                               </button>
                               {item.login.note && <span className="muted small">{loginNote(item.provider, item.login.note)}</span>}
-                            </>
-                          ) : (
-                            item.login.note && <span className="mono muted small">{loginNote(item.provider, item.login.note)}</span>
-                          )}
-                        </div>
+                            </div>
+                          </details>
+                        ) : (
+                          item.login.note && <div className="mobile-cmd account-login"><span className="mono muted small">{loginNote(item.provider, item.login.note)}</span></div>
+                        )}
 
                         {isConfirming && (
                           <div
@@ -328,10 +336,10 @@ export function AccountsCard({ onChanged }: { onChanged?: () => void | Promise<v
               {t('settings.accounts.accountName')} {requiresAccount ? t('settings.accounts.accountRequired') : supportsAccount ? t('settings.accounts.accountOptional') : t('settings.accounts.accountUnused')}
               <input
                 id="acc-name"
-                className="mono"
                 value={supportsAccount ? account : ''}
                 disabled={busy || !supportsAccount}
-                maxLength={16}
+                maxLength={60}
+                aria-describedby="acc-name-preview"
                 placeholder={
                   requiresAccount
                     ? t('settings.accounts.placeholderRequired')
@@ -341,6 +349,8 @@ export function AccountsCard({ onChanged }: { onChanged?: () => void | Promise<v
                 }
                 onChange={e => setAccount(e.target.value)}
               />
+              {supportsAccount && account.trim() && <span id="acc-name-preview" className="hint small mono">
+                {accountId(account) ? t('settings.accounts.idPreview', { base: `${provider}@${accountId(account)}` }) : t('settings.accounts.err.unusableName')}</span>}
             </label>
           </div>
 

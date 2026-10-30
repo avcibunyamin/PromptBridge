@@ -161,6 +161,38 @@ class ResumeTests(unittest.IsolatedAsyncioTestCase):
     def status(self, sid):
         return repo.get_session(self.conn, sid)['status']
 
+    async def test_a_failed_run_says_why(self):   # K-062
+        self.scripts['codex'] = [failed('UNKNOWN')]
+        sid, _ = await self.run_message('breaks')
+        session = ws.list_messages(self.conn, self.wid)['items'][-1]['session']
+        self.assertEqual(session['status'], 'FAILED')
+        self.assertEqual(session['reason'], 'error')   # a code, not the provider's text
+        self.assertEqual(ws.blocker(self.conn, self.wid), 'needs_continue')   # the panel offers "devam ettir" here
+
+    async def test_a_signed_out_run_names_the_account_to_sign_in(self):   # K-060
+        self.scripts['codex'] = [failed('AUTH')]
+        sid, _ = await self.run_message('needs codex')
+        self.assertEqual(self.status(sid), 'WAITING_AUTH')
+        session = ws.list_messages(self.conn, self.wid)['items'][-1]['session']
+        self.assertEqual((session['status'], session['auth_base']), ('WAITING_AUTH', 'codex'))
+
+    async def test_read_only_run_gives_the_author_the_read_only_profile_and_rule(self):   # K-057
+        from app.provider_policy import read_only
+        accepted = digest(self.policy)
+        ws.add_message(self.conn, self.wid, str(uuid4()), 'explain the parser', accepted, read_only(self.policy), accepted,
+                       read_only=True)
+        sid, reason = ws.dispatch_next(self.conn, self.wid)
+        self.assertTrue(sid, reason)
+        await SessionRunner(self.db, adapter_factory=self.factory).run_session(sid)
+        self.assertEqual(self.status(sid), 'SUCCEEDED')
+        self.assertEqual({c['profile'] for c in self.log}, {'READ_ONLY'})
+        self.assertIn('READ-ONLY mode', self.log[0]['prompt'])
+        self.assertNotIn('write profile', self.log[0]['prompt'])
+        self.assertEqual({r['profile'] for r in rows(self.conn, 'SELECT profile FROM step_roles')}, {'READ_ONLY'})
+        _, calls = await self.run_message('now change it')   # the next, ordinary message writes again
+        self.assertEqual(calls[0]['profile'], 'WRITE')
+        self.assertIn('write profile', calls[0]['prompt'])
+
     async def test_first_run_fresh_second_run_resumes_last_author_thread(self):
         s1, calls1 = await self.run_message('build the first feature')
         self.assertEqual(self.status(s1), 'SUCCEEDED')
@@ -674,6 +706,23 @@ class WorkApiTests(unittest.TestCase):
         self.assertEqual((r.status_code, r.json()['code']), (409, 'work_archived'))
         self.assertEqual(self.send(c, wid, 'first', mid).status_code, 200)
         self.assertEqual(c.get('/api/works').json()['counts'], {'active': 0, 'archived': 1})
+
+    def test_list_search_by_title_or_folder(self):   # K-059
+        c = self.client()
+        conn = store.connect(self.db)
+        reels = self.root / 'ReelsVideo'; reels.mkdir()
+        ws.create_work(conn, str(uuid4()), 'Hesap makinesi', self.folder())
+        ws.create_work(conn, str(uuid4()), 'Kapak', str(reels))
+        ws.create_work(conn, str(uuid4()), '100% done_x', self.folder())
+        conn.close()
+        titles = lambda q: sorted(w['title'] for w in c.get('/api/works', params={'q': q}).json()['items'])
+        self.assertEqual(titles('makine'), ['Hesap makinesi'])
+        self.assertEqual(titles('reels'), ['Kapak'])                 # the folder, case-insensitive
+        self.assertEqual(titles('0%'), ['100% done_x'])               # % and _ are literal, not wildcards
+        self.assertEqual(titles('e_x'), ['100% done_x']); self.assertEqual(titles('x_d'), [])
+        page = c.get('/api/works', params={'q': 'makine'}).json()
+        self.assertEqual((page['total'], page['counts']['active']), (1, 3))   # the tab counts stay whole
+        self.assertEqual(len(titles('  ')), 3)
 
     def test_list_paging_same_timestamp_counts_and_legacy_filter(self):
         c = self.client()

@@ -35,8 +35,10 @@ elif a[:2] == ['repo', 'list']:
                       {{'nameWithOwner': '-evil/x'}}, {{'nameWithOwner': 'octo/..'}}]))
 elif a[:2] == ['repo', 'clone']:
     sys.exit(subprocess.call(['git', 'clone', '-q', os.environ['FAKE_GITHUB'] + a[2] + '.git', a[3]]))
+elif a[:2] == ['repo', 'view'] and mode == 'view_fail':
+    sys.stderr.write('HTTP 502'); sys.exit(1)
 elif a[:2] == ['repo', 'view']:
-    print(json.dumps({{'nameWithOwner': a[2], 'defaultBranchRef': {{'name': '' if mode == 'empty' else 'main'}}, 'viewerPermission': 'ADMIN'}}))
+    print(json.dumps({{'nameWithOwner': a[2].replace('old-octo/', 'octo/'), 'defaultBranchRef': {{'name': '' if mode == 'empty' else 'main'}}, 'viewerPermission': 'ADMIN'}}))
 elif a[:2] == ['pr', 'create']:
     print('https://github.com/' + a[a.index('--repo') + 1] + '/pull/7')
 elif a[:2] == ['api', 'user']:
@@ -262,6 +264,59 @@ class Api(unittest.TestCase):
         (self.home / 'code/linked').symlink_to(self.home)
         self.assertEqual(self.post('/api/github/clone', {'repo': 'octo/linked'}, 409)['code'], 'target_exists')
         self.assertEqual(self.gh_calls(), [])
+
+    def test_clone_answers_with_the_disk_spelling(self):
+        self.set_clone_dir()
+        inner = self.home / 'code/Demo/app'; inner.mkdir(parents=True)
+        if not (self.home / 'code/demo').exists():
+            self.skipTest('case-sensitive disk: demo and Demo are different folders')
+        sh('git', 'init', '-q', str(inner))
+        sh('git', '-C', str(inner), 'remote', 'add', 'origin', github.GITHUB + 'octo/demo.git')
+        self.assertEqual(self.post('/api/github/clone', {'repo': 'octo/demo'}), {'path': str(inner.resolve()), 'cloned': False})
+
+    def test_clone_finds_the_repo_one_level_down_even_under_a_renamed_owner(self):
+        self.set_clone_dir()   # K-056: Projeler/TechLex is a plain folder; the clone is TechLex/pratik-kelime
+        outer, inner = self.home / 'code/demo', self.home / 'code/demo/app'   # same spelling: CI disks are case-sensitive
+        inner.mkdir(parents=True)
+        sh('git', 'init', '-q', str(inner))
+        sh('git', '-C', str(inner), 'remote', 'add', 'origin', github.GITHUB + 'old-octo/demo.git')
+        (outer / 'notes.txt').write_text('mine')
+        self.assertEqual(self.post('/api/github/clone', {'repo': 'octo/demo'}), {'path': str(inner.resolve()), 'cloned': False})
+        self.assertEqual(self.gh_calls()[-1]['argv'], ['repo', 'view', 'old-octo/demo', '--json', 'nameWithOwner'])
+        with patch.dict(os.environ, {'FAKE_GH_MODE': 'view_fail'}):   # GitHub unreachable: said so, not "occupied"
+            self.assertEqual(self.post('/api/github/clone', {'repo': 'octo/demo'}, 409)['code'], 'gh_failed')
+        sh('git', '-C', str(inner), 'remote', 'set-url', 'origin', github.GITHUB + 'someone/demo.git')
+        self.assertEqual(self.post('/api/github/clone', {'repo': 'octo/demo'}, 409)['code'], 'target_occupied')   # a fork stays refused
+        sh('git', '-C', str(inner), 'remote', 'set-url', 'origin', github.GITHUB + 'octo/demo.git')   # would match…
+        sh('git', '-C', str(inner), 'config', 'url.' + github.GITHUB + 'octo/.insteadOf', github.GITHUB + 'someone/')   # …but not with own rewrites
+        self.assertEqual(self.post('/api/github/clone', {'repo': 'octo/demo'}, 409)['code'], 'target_occupied')   # a rewrite is no proof
+        sh('git', '-C', str(inner), 'config', '--unset', 'url.' + github.GITHUB + 'octo/.insteadOf')
+        sh('git', '-C', str(inner), 'config', '--add', 'remote.origin.url', github.GITHUB + 'someone/other.git')
+        self.assertEqual(self.post('/api/github/clone', {'repo': 'octo/demo'}, 409)['code'], 'target_occupied')   # two origins: no proof
+        sh('git', '-C', str(inner), 'config', '--unset', 'remote.origin.url', 'someone')
+        self.assertEqual(self.post('/api/github/clone', {'repo': 'octo/demo'})['cloned'], False)   # control: one origin matches again
+        outside = self.home / 'outside'; sh('git', 'clone', '-q', str(inner), str(outside))
+        sh('git', '-C', str(outside), 'remote', 'set-url', 'origin', github.GITHUB + 'octo/demo.git')
+        (inner / '.git').rename(inner / 'git-real'); (inner / '.git').symlink_to(outside / '.git')
+        self.assertEqual(self.post('/api/github/clone', {'repo': 'octo/demo'}, 409)['code'], 'target_occupied')   # a linked .git
+        (inner / '.git').unlink(); (inner / 'git-real').rename(inner / '.git')
+        self.assertEqual(self.post('/api/github/clone', {'repo': 'octo/demo'}), {'path': str(inner.resolve()), 'cloned': False})   # control
+        sh('git', 'init', '-q', str(outer))   # the folder is a repository of its own: its children are not searched
+        self.assertEqual(self.post('/api/github/clone', {'repo': 'octo/demo'}, 409)['code'], 'target_occupied')
+        self.assertFalse(any(c['argv'][:2] == ['repo', 'clone'] for c in self.gh_calls()))
+
+    def test_clone_continues_after_a_child_rename_lookup_fails(self):
+        self.set_clone_dir()
+        outer = self.home / 'code/demo'
+        first, match = outer / 'a-old-owner', outer / 'z-exact-match'
+        for child, owner in ((first, 'old-octo'), (match, 'octo')):
+            child.mkdir(parents=True)
+            sh('git', 'init', '-q', str(child))
+            sh('git', '-C', str(child), 'remote', 'add', 'origin', github.GITHUB + owner + '/demo.git')
+
+        with patch.dict(os.environ, {'FAKE_GH_MODE': 'view_fail'}):
+            result = self.post('/api/github/clone', {'repo': 'octo/demo'})
+        self.assertEqual(result, {'path': str(match.resolve()), 'cloned': False})
 
     def test_failed_clone_removes_half_cloned_target(self):
         self.set_clone_dir()

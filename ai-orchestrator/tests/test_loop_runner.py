@@ -168,6 +168,21 @@ class LoopRunner(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.conn.execute('SELECT count(*) FROM workspace_locks').fetchone()[0], 0)
         self.assertEqual(ws.blocker(self.conn, self.wid), 'needs_review_decision')
 
+    async def test_an_author_out_of_time_goes_to_review_and_the_next_turn(self):   # K-061
+        sid = self.dispatch()
+        script = Script([review('changes_requested', 'Yarım kaldı'), review('pass')], writes=lambda n: f'v{n}')
+        made = []
+        def factory(provider):
+            made.append(provider); script.delay = 30 if len(made) == 1 else 0
+            return script(provider)
+        await SessionRunner(self.db, adapter_factory=factory, step_timeout=.2).run_session(sid)
+        status, st = repo.get_session(self.conn, sid)['status'], loop.state(self.conn, sid)
+        self.assertEqual((status, st['outcome']), ('SUCCEEDED', 'verified'))
+        self.assertEqual(self.roles(sid), [('author', 'COMPLETED'), ('reviewer', 'COMPLETED')] * 2)
+        self.assertEqual(repo.get_session_steps(self.conn, sid)[0]['terminal_reason'], 'step_timeout')
+        self.assertIn('TIME LIMIT REACHED', script.calls[1]['prompt'])   # the reviewer knows the author ran out of time
+        self.assertIn('Yarım kaldı', script.calls[2]['prompt'])          # the next author continues from the review
+
     async def test_budget_already_spent_stops_before_starting_a_step(self):
         sid = self.dispatch()
         seg = loop.open_segment(self.conn, sid, f'{sid}_t1a'); loop.settle(self.conn, seg, 31 * 60_000)

@@ -6,6 +6,8 @@ import { t } from '../../i18n'
 import { LoopView, type Loop, type Turn } from './LoopView'
 import { Pill, Provider, Chains, RECOVERED, active, labels, contextLabels, reasonLabels, resumeReasons, promptFormats, promptRejections, api, Modal, when, type Policy } from './shared'
 
+const handoffReason=(r:string)=>r==='QUOTA_EXCEEDED'?t('session.handoff.quotaExceeded'):r==='QUOTA_RECENT'?t('session.handoff.quotaRecent'):r   // K-067
+
 type Session = {id:string; status:string; workspace_path:string; created_at:string}
 type Step = {id:string; step_index:number; agent_name:string; role?:string; status:string; result_text:string|null; terminal_reason:string|null}
 type Attempt = {id:string;step_id:string;attempt_no:number;provider:string;profile:string;status:string;error_code:string|null;continuation_no:number;provider_session_id:string|null;terminal_reason?:string|null;handover_reason?:string|null}
@@ -80,7 +82,7 @@ export function SessionView({sessionId,embedded=false,onChange,status:hint}:{ses
         const last=items[items.length-1], p=d.payload
         if(d.kind==='output_delta' && last?.kind==='output_delta' && last.attempt_id===p.attempt_id)
           return [...items.slice(0,-1),{...last,text:(last.text+p.text).slice(-100000)}]
-        const text=d.kind==='output_delta'?p.text:d.kind==='command_result'?p.command:`${p.from} → ${p.to} · ${p.reason}`
+        const text=d.kind==='output_delta'?p.text:d.kind==='command_result'?p.command:`${p.from} → ${p.to} · ${handoffReason(p.reason)}`
         return [...items,{id:m.lastEventId,attempt_id:p.attempt_id,kind:d.kind,text,exitCode:p.exit_code,output:p.output}].slice(-200)
       })
     })
@@ -157,7 +159,10 @@ export function SessionView({sessionId,embedded=false,onChange,status:hint}:{ses
       {!mobile.active&&<button className="btn" disabled={busy} aria-busy={busy} onClick={()=>void retry()}>{busy?'…':t('session.wait.tryNow')}</button>}{' '}
       {canInterrupt()&&<button className="btn danger" disabled={busy} onClick={()=>void cancelWait()}>{t('session.wait.cancel')}</button>}</div>
     :['WAITING_CAPACITY','WAITING_AUTH'].includes(status)&&<div className="notice" role="status">{labels[status]}. {t('session.wait.manualNotice')}{plan&&plan.closed_reason&&status==='WAITING_CAPACITY'?t('session.wait.endedInline',{reason:waitEnds[plan.closed_reason]||plan.closed_reason}):''} {!mobile.active&&<button className="btn" disabled={busy} aria-busy={busy} onClick={()=>void retry()}>{busy?'…':t('session.retry')}</button>} {canInterrupt()&&<button className="btn danger" disabled={busy} onClick={()=>void cancel()}>{t('session.stop')}</button>}</div>}
-    {status==='WAITING_HUMAN'&&<div className="notice" role="alert"><strong>{t('session.waitingHuman.title')}</strong>{' '}
+    {status==='WAITING_HUMAN'&&detail.steps.some(s=>s.terminal_reason==='step_timeout'&&s.status==='FAILED')&&<div className="notice" role="alert"><strong>{t('session.timeout.title')}</strong>{' '}{t('session.timeout.body')}{' '}
+      {!mobile.active&&<button className="btn" disabled={busy} aria-busy={busy} onClick={()=>void retry()}>{busy?'…':t('session.timeout.continue')}</button>}{' '}
+      {canInterrupt()&&<button className="btn danger" disabled={busy} onClick={()=>void cancel()}>{t('session.stop')}</button>}</div>}
+    {status==='WAITING_HUMAN'&&!detail.steps.some(s=>s.terminal_reason==='step_timeout'&&s.status==='FAILED')&&<div className="notice" role="alert"><strong>{t('session.waitingHuman.title')}</strong>{' '}
       {changedPaths.length?t('session.waitingHuman.changed',{paths:changedPaths.slice(0,5).join(', '),more:changedPaths.length>5?t('session.waitingHuman.moreFiles',{count:changedPaths.length-5}):''}):''}{t('session.waitingHuman.body')}{' '}
       {!mobile.active&&<button className="btn" disabled={busy} aria-busy={busy} onClick={()=>void retry()}>{busy?'…':t('session.retry')}</button>}{' '}
       {canInterrupt()&&<button className="btn danger" disabled={busy} onClick={()=>void cancel()}>{t('session.stop')}</button>}</div>}
@@ -172,7 +177,7 @@ export function SessionView({sessionId,embedded=false,onChange,status:hint}:{ses
         {meta?.format&&<span className="muted">· {promptFormats[meta.format]||meta.format}{meta.history?.truncated?t('session.attempt.historyTruncated'):''}</span>}
         <span className="spacer"/><Pill status={a.status} recovered={a.terminal_reason===RECOVERED}/>{a.error_code&&<code className="attempt-code">{a.error_code}</code>}</div>})}</div>
       {noChanges.has(s.id)&&<div className="handover"><strong>{t('session.noChanges.title')}</strong><span>{t('session.noChanges.body')}</span></div>}
-      {handoffs.filter(h=>h.step_id===s.id).map(h=><div key={h.id} className="handover"><strong>{t('session.handoff.title')}</strong><span>{h.from} → {h.to}</span><span>· {h.reason==='QUOTA_EXCEEDED'?t('session.handoff.quotaExceeded'):h.reason}</span></div>)}
+      {handoffs.filter(h=>h.step_id===s.id).map(h=><div key={h.id} className="handover"><strong>{t('session.handoff.title')}</strong><span>{h.from} → {h.to}</span><span>· {handoffReason(h.reason)}</span></div>)}
       <p className="chain-note">{t('session.continuation.summary',{used:detail.attempts.filter(a=>a.step_id===s.id&&a.continuation_no>0&&a.handover_reason!=='command_denied_followup').length,max:detail.policy?.max_context_continuations??0})}</p>
       {continuations.filter(c=>c.step_id===s.id).map(c=><div key={c.id} className="handover"><strong>{startedAttempts.has(c.to_attempt_id)?t('session.continuation.started'):t('session.continuation.prepared')}</strong><span>{c.provider} · {c.step_continuations_used}/{c.max_context_continuations}</span></div>)}
       {s.result_text&&<details className="step-out" open={s.status==='FAILED'}><summary>{t('session.step.result')}</summary><pre>{s.result_text}</pre></details>}

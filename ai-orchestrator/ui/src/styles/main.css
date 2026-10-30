@@ -337,3 +337,66 @@ dialog.modal:has(.gh-steps){max-width:640px}
 .error-banner:has(.not-repo-help){flex-direction:column;align-items:stretch}.not-repo-help{margin-top:8px;color:var(--ink)}.not-repo-help p{margin:0 0 6px}
 .not-repo-actions{display:flex;flex-wrap:wrap;gap:6px}
 .error-banner .not-repo-actions .btn{border:1px solid currentColor;border-radius:8px;padding:4px 10px}
+
+/* K-059: forms (work settings) get a wide dialog; it never scrolls sideways */
+dialog.modal.wide{max-width:min(880px,calc(100vw - 32px));overflow-x:hidden}
+/* K-059: what a running execution is doing now */
+.run-live{display:flex;flex-wrap:wrap;align-items:center;gap:2px 10px;margin-top:8px;font-size:12.5px;color:var(--muted);min-width:0}
+.run-live .d{width:7px;height:7px;border-radius:50%;background:var(--accent);animation:run-live-pulse 1.6s ease-in-out infinite}
+.run-live-who{color:var(--ink);font-weight:600}
+.run-live-last{flex:1 1 240px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@keyframes run-live-pulse{50%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){.run-live .d{animation:none}}
+/* K-059: the work list fills the sidebar under a search box; the control centre is the profile menu at the foot */
+.side-search{display:flex;align-items:center;gap:8px;margin:0 2px 10px;padding:0 10px;border:1px solid var(--border);border-radius:9px;background:var(--inset);color:var(--faint)}
+.side-search:focus-within{border-color:var(--accent);color:var(--muted)}
+.side-search input{flex:1;min-width:0;border:0;background:transparent;color:var(--ink);font:inherit;font-size:13px;padding:7px 0;outline:none}
+@media(max-width:600px){.side-search{margin:0 12px 8px}}
+.work-sidebar .session-list{flex:1 1 auto;min-height:0}
+.profile{position:relative;width:100%}
+.profile-btn{display:flex;align-items:center;gap:10px;width:100%;border:1px solid transparent;background:transparent;color:var(--ink);font:inherit;text-align:left;padding:8px 10px;border-radius:10px;cursor:pointer}
+.profile-btn:hover,.profile-btn[aria-expanded=true]{background:var(--inset);border-color:var(--border)}
+.profile-btn:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.profile-avatar{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;flex:none;background:var(--accent-soft);color:var(--accent);font-weight:700;font-size:13px}
+.profile-text{flex:1;min-width:0;display:flex;flex-direction:column}
+.profile-text strong{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.profile-text>span{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.profile-panel{position:absolute;left:0;right:0;bottom:calc(100% + 8px);z-index:40;padding:12px 8px 10px;border:1px solid var(--border-strong);border-radius:14px;
+  background:var(--surface);box-shadow:0 18px 50px rgba(0,0,0,.35)}
+.profile-panel .nav-main{margin-bottom:10px}
+.profile-theme{display:flex;flex-direction:column;gap:6px;padding:10px 12px 6px;border-top:1px solid var(--border)}
+.profile-theme>span{font-size:12.5px;color:var(--muted)}
+.profile-theme .seg{display:flex;gap:2px;padding:2px}.profile-theme .seg button{flex:1;border:0;background:transparent;color:var(--muted);font:inherit;font-size:12px;padding:4px 8px;border-radius:7px;cursor:pointer}
+.profile-theme .seg button.on{background:var(--surface-2);color:var(--ink);box-shadow:var(--shadow-sm)}
+.profile-version{margin:4px 12px 0;font-size:10.5px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* K-060: sign in from the panel */
+.signin{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin-top:8px}
+.signin .btn svg{width:14px;height:14px}
+.signin-status{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted)}
+.signin-status svg{width:13px;height:13px}
+.signin-status.signed_in,.signin-status.known{color:var(--ok);font-weight:600}.signin-status.signed_out,.signin-status.error{color:var(--warn)}
+.account-manual{margin-top:6px}.account-manual summary{cursor:pointer}
+.auth-needed{display:flex;flex-direction:column;gap:4px;margin-top:10px}
+/* K-062: is anything running here? (always above the composer) */
+.work-status{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:14px 0 8px;padding:9px 14px;border:1px solid var(--border);border-radius:12px;background:var(--inset);font-size:13px;color:var(--muted)}
+.work-status>strong{font-weight:600;color:var(--ink)}
+.work-status>.d{width:8px;height:8px;border-radius:50%;background:var(--faint);flex:none}
+.work-status.running>.d,.work-status.queued>.d{background:var(--accent);animation:run-live-pulse 1.6s ease-in-out infinite}
+.work-status.waiting>.d,.work-status.message_queued>.d,.work-status.stopped>.d{background:var(--warn)}
+.work-status.failed>.d{background:var(--bad,#e5484d)}.work-status.done>.d{background:var(--ok)}
+.work-status .run-live{margin:0;flex:1 1 300px}
+.work-status .run-live>.d{display:none}
+.work-status .btn{margin-left:auto}
+@media (prefers-reduced-motion:reduce){.work-status>.d{animation:none}}
+.send.round.danger svg{width:12px;height:12px}   /* K-063: the stop square */
+/* K-065: the preview as a right-hand pane beside the chat (like Claude); in a narrow content area it stacks above the chat. */
+.pane:has(> .work-split.on){max-width:none;container-type:inline-size}
+.work-split.on{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:20px;align-items:start}
+.preview-side{position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto;border-radius:var(--r)}
+.preview-side .preview-frame{height:calc(100vh - 330px);min-height:420px}
+.preview-address{display:flex;align-items:center;gap:6px;padding:4px 6px 4px 10px;border:1px solid var(--border-strong);border-radius:10px;background:var(--inset)}
+.preview-address input{flex:1;min-width:0;border:0;background:transparent;padding:4px 0;font-size:12.5px}
+.preview-address .icon-btn{width:28px;height:28px}
+@container (max-width:880px){.work-split.on{display:flex;flex-direction:column-reverse}.preview-side{position:static;max-height:none}}
+.final-answer{margin-top:10px;padding:12px 14px;border:1px solid var(--border);border-radius:12px;background:var(--surface-2)}
+.final-head{display:flex;align-items:center;gap:8px;margin-bottom:6px}

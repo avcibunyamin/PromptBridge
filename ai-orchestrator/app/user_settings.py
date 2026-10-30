@@ -25,7 +25,7 @@ from app.security import mutation_guard
 
 DEFAULTS = {'version': 1, 'team': None, 'accepted_digest': None, 'theme': 'system', 'github': {'clone_dir': None},
             'preview': {'sandbox': False}, 'pinned_works': [],
-            'work_teams': {}, 'work_waits': {}}   # TB-22 K1: experimental, off by default
+            'work_teams': {}, 'work_waits': {}, 'step_minutes': 45}   # TB-22 K1: experimental, off by default; K-061
 _LOCK = threading.Lock()
 
 
@@ -123,6 +123,7 @@ class Patch(BaseModel):
     pinned_works: list[PinnedWorkId] | None = Field(default=None, max_length=20)
     work_teams: dict[WorkId, Team] | None = Field(default=None, max_length=50)
     work_waits: dict[WorkId, WorkWait] | None = Field(default=None, max_length=50)
+    step_minutes: int | None = Field(default=None, ge=10, le=180, strict=True)   # K-061: one provider step's longest run
 
     @field_validator('pinned_works')
     @classmethod
@@ -200,6 +201,8 @@ def put_settings(body: Patch, request: Request):
             data['github'] = {'clone_dir': clone_dir or None}
         if 'preview' in sent and body.preview is not None:
             data['preview'] = {'sandbox': body.preview.sandbox}
+        if 'step_minutes' in sent and body.step_minutes is not None:
+            data['step_minutes'] = body.step_minutes
         if 'pinned_works' in sent and body.pinned_works is not None:
             data['pinned_works'] = list(body.pinned_works)
         if 'work_teams' in sent and body.work_teams is not None:

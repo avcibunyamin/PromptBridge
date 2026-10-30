@@ -187,6 +187,10 @@ export function SettingsPage({ subpath, onTheme }: { subpath?: string; onTheme: 
           <option value="tr">{t('settings.lang.tr')}</option>
           <option value="en">{t('settings.lang.en')}</option></select></label>
         <p className="muted small">{t('settings.lang.note')}</p>
+        {!isMobile && canCmd && <><label htmlFor="set-step">{t('settings.stepMinutes.label')}<select id="set-step" value={view?.settings.step_minutes ?? 45} disabled={busy || !view}
+          onChange={e => void save({ step_minutes: Number(e.target.value) }, t('settings.stepMinutes.saved'))}>
+          {[15, 30, 45, 60, 90, 120, 180].map(m => <option key={m} value={m}>{t('settings.stepMinutes.option', { m })}</option>)}</select></label>
+          <p className="muted small">{t('settings.stepMinutes.note')}</p></>}
       </div></section>}
 
       {activeTab === 'integrations' && !isMobile && <>

@@ -1,4 +1,5 @@
 """Transactional work claims, steps and checkpoints, separate from envelopes."""
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import json
 from app.store import transaction, _now
@@ -76,9 +77,11 @@ def add_session_step(conn, step_id, session_id, step_index, agent_name, task_pro
         conn.execute('INSERT INTO session_steps(id, session_id, step_index, agent_name, '
                      'task_prompt, status) VALUES (?, ?, ?, ?, ?, ?)',
                      (step_id, session_id, step_index, agent_name, task_prompt, 'PENDING'))
-        from app.provider_policy import PROFILES
+        from app.provider_policy import role_profile
         role = role or ('reviewer' if step_index == 1 else 'author')
-        conn.execute('INSERT INTO step_roles VALUES (?, ?, ?)', (step_id, role, PROFILES[role]))
+        frozen = conn.execute('SELECT policy_json FROM session_policies WHERE session_id=?', (session_id,)).fetchone()
+        profile = role_profile(json.loads(frozen[0]) if frozen else None, role)   # K-057: a read-only run's author too
+        conn.execute('INSERT INTO step_roles VALUES (?, ?, ?)', (step_id, role, profile))
 
 
 def get_session(conn, session_id):
@@ -354,3 +357,24 @@ def retry_session(conn, session_id):
                        {'from_state': session['status'], 'from_generation': step['retry_generation'],
                         'retry_generation': step['retry_generation'] + 1,
                         'context_continuations_used': continuation_count(conn, step['id'])})
+
+
+def skip_exhausted(conn, session_id, step_id, chain, role, minutes):
+    """K-067: index of the first chain entry to try. Leading entries whose provider got a verified QUOTA_EXCEEDED in
+    the last `minutes` (and no successful attempt since) are skipped and recorded; the last entry is never skipped.
+    ponytail: unindexed scans of session_attempts (hundreds of rows, once per step); add an index on
+    (provider, error_code, ended_at) in a schema migration if it grows to many thousands. A run that succeeds on the
+    same provider in the same instant can still be skipped once; the next chain entry then does the step."""
+    since = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
+    index = 0
+    while index < len(chain) - 1:
+        provider = chain[index]['provider']
+        hit = conn.execute("SELECT MAX(ended_at) FROM session_attempts WHERE provider=? AND error_code='QUOTA_EXCEEDED' "
+                           "AND ended_at>=?", (provider, since)).fetchone()[0]
+        if not hit or conn.execute("SELECT 1 FROM session_attempts WHERE provider=? AND status='COMPLETED' AND ended_at>?",
+                                   (provider, hit)).fetchone():
+            break
+        checkpoint(conn, session_id, step_id, 'handoff',
+                   {'from': provider, 'to': chain[index + 1]['provider'], 'role': role, 'reason': 'QUOTA_RECENT', 'quota_at': hit})
+        index += 1
+    return index

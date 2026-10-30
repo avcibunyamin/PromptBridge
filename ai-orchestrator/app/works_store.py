@@ -9,7 +9,7 @@ import json
 import os
 from uuid import uuid4
 from app import runner_store as repo, loop_store, project_instructions
-from app.provider_policy import loop_budget, team_of, kind
+from app.provider_policy import loop_budget, team_of, kind, split
 from app.store import transaction, _now
 
 ACTIVE = ('QUEUED', 'RUNNING')
@@ -117,9 +117,14 @@ def create_work(conn, work_id, title, workspace_path, isolation=None):
         return get_work(conn, work_id), True
 
 
-def list_works(conn, *, archived=False, cursor=None, limit=50):
-    """Keyset page (newest first) + totals from one read snapshot."""
+def list_works(conn, *, archived=False, cursor=None, limit=50, q=None):
+    """Keyset page (newest first) + totals from one read snapshot. K-059: `q` matches title or folder."""
     where = 'deleted_at IS NULL AND ' + ('archived_at IS NOT NULL' if archived else 'archived_at IS NULL')
+    found = []
+    if q and q.strip():
+        like = '%' + q.strip().replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
+        where += " AND (title LIKE ? ESCAPE '\\' OR workspace_path LIKE ? ESCAPE '\\')"
+        found = [like, like]
     conn.execute('BEGIN')  # one WAL read snapshot for items, total and counts
     try:
         args, page = [], ''
@@ -129,8 +134,8 @@ def list_works(conn, *, archived=False, cursor=None, limit=50):
             args = [created_at, created_at, wid]
         rows = [dict(r) for r in conn.execute(
             f'SELECT * FROM works WHERE {where}{page} ORDER BY created_at DESC, id DESC LIMIT ?',
-            (*args, limit + 1))]
-        total = conn.execute(f'SELECT count(*) FROM works WHERE {where}').fetchone()[0]
+            (*found, *args, limit + 1))]
+        total = conn.execute(f'SELECT count(*) FROM works WHERE {where}', found).fetchone()[0]
         active = conn.execute('SELECT count(*) FROM works WHERE deleted_at IS NULL AND archived_at IS NULL').fetchone()[0]
         archived_count = conn.execute('SELECT count(*) FROM works WHERE deleted_at IS NULL AND archived_at IS NOT NULL').fetchone()[0]
         items = [dict(public_work(w), **work_summary(conn, w['id'])) for w in rows[:limit]]
@@ -211,7 +216,7 @@ def blocker(conn, work_id):
 
 
 def add_message(conn, work_id, client_message_id, text, policy_digest, current_policy, current_digest, team=None,
-                wait=None, recipe=None):
+                wait=None, recipe=None, read_only=False):
     """Replay is checked first: an accepted message keeps returning even if policy changed.
 
     F3-03: an explicit team is part of the payload hash, so the same id with another team is an
@@ -222,6 +227,8 @@ def add_message(conn, work_id, client_message_id, text, policy_digest, current_p
         body['team'] = {role: list(team[role]) for role in sorted(team)}
     if wait is not None:
         body['wait'] = dict(wait)
+    if read_only:   # K-057: hashed like the wait (absent = the earlier hash)
+        body['read_only'] = True
     if recipe is not None:
         rid = recipe['id'] if isinstance(recipe, dict) else recipe
         body['recipe'] = rid
@@ -263,8 +270,36 @@ def message_view(conn, msg):
             'team': team_of(policy),
             'wait': policy.get('wait'),
             'recipe': {k: recipe[k] for k in ('id', 'title', 'version')} if recipe else None,
+            'read_only': policy.get('read_only') is True,
             'session': run and {'id': run['session_id'], 'status': run['status'], 'git_changed': _git_changed(conn, run['session_id']),
-                                'tests': _check(conn, run['session_id'], 'tests'), 'lint': _check(conn, run['session_id'], 'lint')}}
+                                'tests': _check(conn, run['session_id'], 'tests'), 'lint': _check(conn, run['session_id'], 'lint'),
+                                'auth_base': _auth_base(conn, run['session_id']) if run['status'] == 'WAITING_AUTH' else None,
+                                'reason': _end_reason(conn, run['session_id']) if run['status'] in ('FAILED', 'CANCELLED', 'WAITING_HUMAN') else None}}
+
+
+def _end_reason(conn, session_id):
+    """K-062: why a run ended or waits, as a code (timeout | cancelled | auth | error); the raw reason stays in the
+    run's details, never in this summary (it can carry provider error text)."""
+    row = conn.execute("SELECT terminal_reason FROM session_steps WHERE session_id=? AND status IN ('FAILED','CANCELLED') "
+                       "ORDER BY step_index DESC LIMIT 1", (session_id,)).fetchone()
+    if not row:
+        return None
+    raw = (row[0] or '').lower()
+    return ('timeout' if 'step_timeout' in raw or 'timed out' in raw else 'cancelled' if 'cancelled_by_user' in raw
+            else 'auth' if 'home_unusable' in raw or 'auth' in raw else 'error')
+
+
+def _auth_base(conn, session_id):
+    """K-060: the account a WAITING_AUTH run needs signed in again (`agy@hesap2`), from its newest AUTH attempt."""
+    row = conn.execute("SELECT a.provider FROM session_attempts a JOIN session_steps s ON s.id=a.step_id "
+                       "WHERE s.session_id=? AND a.error_code='AUTH' ORDER BY a.started_at DESC LIMIT 1", (session_id,)).fetchone()
+    if not row:
+        return None
+    try:
+        provider, account, _, _ = split(row[0])
+    except ValueError:
+        return None
+    return f'{provider}@{account}' if account else provider
 
 
 def _check(conn, session_id, check):

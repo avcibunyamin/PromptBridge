@@ -242,6 +242,17 @@ def effective(config, team=None):
     return normalize(base if team is None else dict(base, roles={r: list(team[r]) for r in PROFILES}))
 
 
+def read_only(policy):
+    """K-057: the accepted chain with every author entry narrowed to READ_ONLY. It only takes rights away,
+    so the chain's acceptance covers it; the frozen policy says so and the steps take their profile from it."""
+    author = [dict(i, profile='READ_ONLY') for i in policy['roles']['author']]
+    return dict(policy, read_only=True, roles=dict(policy['roles'], author=author))
+
+
+def role_profile(policy, role):
+    return 'READ_ONLY' if role == 'author' and (policy or {}).get('read_only') is True else PROFILES[role]
+
+
 def team_problems(config, team):
     """Semantic team validation for the preview and message POST; [] means valid."""
     if not isinstance(team, dict) or set(team) != set(PROFILES):

@@ -1,16 +1,24 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useRef, type MouseEvent, type ReactNode } from 'react'
 import { checkedFetch } from '../../api'
 import { locale, t } from '../../i18n'
 import { splitId, type Cap } from './team'
 
 /** Confirmation dialog on the native <dialog>: showModal() keeps focus inside and makes the page inert,
- *  Escape closes (unless busy). React removes the element before close() runs, so the browser's own focus
- *  restore does not fire: the opener is refocused explicitly. */
-export function Modal({label,onClose,busy,children}:{label:string;onClose:()=>void;busy?:boolean;children:ReactNode}){
+ *  Escape or a click on the backdrop closes (unless busy). React removes the element before close() runs, so the
+ *  browser's own focus restore does not fire: the opener is refocused explicitly. `wide` fits forms (K-059). */
+export function Modal({label,onClose,busy,wide,children}:{label:string;onClose:()=>void;busy?:boolean;wide?:boolean;children:ReactNode}){
   const ref=useRef<HTMLDialogElement>(null)
   useEffect(()=>{const d=ref.current,opener=document.activeElement as HTMLElement|null;d?.showModal()
     return()=>{d?.close();opener?.focus()}},[])
-  return <dialog ref={ref} className="modal" aria-label={label} onCancel={e=>{e.preventDefault();if(!busy)onClose()}}>{children}</dialog>
+  // The backdrop belongs to the <dialog> itself: a click there targets it and lands outside its box.
+  // Clicks inside (and keyboard "clicks", at 0,0) target a child, so they never close it.
+  const outside=(e:MouseEvent<HTMLDialogElement>)=>{
+    const d=ref.current;if(busy||!d||e.target!==d)return
+    const r=d.getBoundingClientRect()
+    if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)onClose()
+  }
+  return <dialog ref={ref} className={'modal'+(wide?' wide':'')} aria-label={label} onClick={outside}
+    onCancel={e=>{e.preventDefault();if(!busy)onClose()}}>{children}</dialog>
 }
 
 export type PolicyBody = {roles:Record<string,{provider:string;profile:string}[]>;max_context_continuations?:number;loop?:{max_turns:number;max_active_minutes:number}}

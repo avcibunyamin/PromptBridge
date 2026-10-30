@@ -3,24 +3,17 @@ import assert from 'node:assert/strict'
 import {
   formatAccountError,
   groupAccountsByProvider,
-  isValidAccountName,
+  accountId,
   providerRequiresAccount,
   providerSupportsAccount,
   validateAccountInput,
   type AccountItem,
 } from '../src/accountRules.ts'
 
-test('TB-39: account name validation matches ACCOUNT_RE (lowercase, digits, hyphen, max 16)', () => {
-  assert.equal(isValidAccountName('a'), true)
-  assert.equal(isValidAccountName('hesap1'), true)
-  assert.equal(isValidAccountName('is-2'), true)
-  assert.equal(isValidAccountName('1234567890123456'), true)
-  assert.equal(isValidAccountName('12345678901234567'), false)
-  assert.equal(isValidAccountName(''), false)
-  assert.equal(isValidAccountName('-hesap'), false)
-  assert.equal(isValidAccountName('Hesap1'), false)
-  assert.equal(isValidAccountName('hesap_1'), false)
-  assert.equal(isValidAccountName('hesap@1'), false)
+test('K-060: any name maps to the same id the server makes (account_id)', () => {
+  const cases: [string, string][] = [['İş Hesabı 2', 'is-hesabi-2'], ['Büyük_Çalışma', 'buyuk-calisma'], ['  Ana / Şirket  ', 'ana-sirket'],
+    ['a'.repeat(30), 'a'.repeat(16)], ['-x-', 'x'], ['hesap1', 'hesap1'], ['!!! ---', ''], ['ĞÜŞÖÇ', 'gusoc']]
+  for (const [name, id] of cases) assert.equal(accountId(name), id, name)
 })
 
 test('TB-39: validateAccountInput enforces provider-specific account and role rules', () => {
@@ -41,8 +34,9 @@ test('TB-39: validateAccountInput enforces provider-specific account and role ru
   const agyMissing = validateAccountInput('agy', '   ', ['author'])
   assert.equal(agyMissing.ok, false)
 
-  const agyBad = validateAccountInput('agy', 'Hesap!', ['author'])
-  assert.equal(agyBad.ok, false)
+  const agyFree = validateAccountInput('agy', 'İş Hesabı', ['author'])   // K-060: free names are fine
+  assert.deepEqual(agyFree, { ok: true, value: { provider: 'agy', account: 'İş Hesabı', roles: ['author'] }, base: 'agy@is-hesabi' })
+  assert.equal(validateAccountInput('agy', '!!!', ['author']).ok, false)
 
   const codexDefault = validateAccountInput('codex', '', ['author'])
   assert.deepEqual(codexDefault, {

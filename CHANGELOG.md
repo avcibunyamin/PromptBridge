@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-30
+
+### Added
+
+- Review-only runs: a checkbox on a new work and `/yalniz-incele` in a work; the author cannot change files either and answers in the chat.
+- Sidebar search over works (title or folder); the control centre moved into a profile button at the sidebar foot (your name and computer, pages, theme, version).
+- A live line under a running execution: role, provider/model, elapsed time and its last output, command or tool step (Antigravity tool steps included).
+- Apps that call their own server (fetch, storage) now work inside the preview pane (`allow-same-origin`); the panel itself refuses to be framed (`frame-ancestors 'none'`) and previews never take the panel's trusted ports (5173, 8765).
+- The preview opens as a pane to the right of the chat, with an address bar, reload, open in a new tab and close; a finished run shows its answer in the chat (what was done, how to run it) with "Run in preview". Python scripts that declare `--host`/`--port` get them in the preview command.
+- Writing authors keep a `PROMPTBRIDGE-NOTES.md` progress note in the workspace, so the next model continues after a quota or time-limit stop instead of starting cold; reviewers only read it.
+- Account sign-in from the panel: adding an agy/Codex account opens its sign-in in Terminal and shows when it is done; a run stopped by a signed-out account names it with Sign in / Continue.
+- Settings → Appearance: the longest run of one step (default 45 minutes).
+- A status strip above the composer: what runs now, or that nothing runs and how the last run ended, with one-click "Continue where it left off".
+- While a run is going, the round send button stops it; it turns back into the arrow when the run ends.
+
+### Changed
+
+- An account that hit a verified quota error in the last hour is skipped at the start of the next step's chain instead of being opened again (the last account is never skipped); the run shows it as a hand-off.
+- Account names are free text; a safe id is derived (shown while typing). Only the same name twice is refused.
+- The step time limit counts the Mac's sleep too; a run no longer hangs overnight.
+- A step that runs out of time no longer fails the run: an author's timeout hands over to the reviewer and the next author continues; a last step's timeout waits and "Continue" resumes it.
+- The work settings dialog is wide and closes on a click outside it.
+
+### Fixed
+
+- Accounts already signed in show as signed in (at the last model check) instead of asking to sign in again; switching settings tabs no longer shifts the page sideways.
+- Argon (agy) accounts on macOS 27: "could not unlock the agy keychain" when adding or using an account. macOS no longer unlocks a keychain file named `login.keychain-db` from the command line, so new accounts get `agy.keychain-db` with `login.keychain-db` pointing at it; an old keychain that still unlocks is kept, one that does not is set aside (not deleted) and that account signs in again.
+- Picking a GitHub repository whose name is already taken in the clone folder now finds the existing copy: inside a plain folder of that name (one level down) and under a renamed GitHub account, instead of stopping at "target_occupied". Forks, repositories with their own URL rewrites and linked `.git` folders are still refused.
+
 ## [0.5.0] - 2026-10-29
 
 ### Added

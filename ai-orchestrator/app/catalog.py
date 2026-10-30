@@ -298,6 +298,32 @@ def refresh(db_path, config):
         return snapshot()
 
 
+def refresh_base(db_path, provider, account):
+    """K-060: re-list one agy/codex account (after a sign-in) and replace its part of the catalog.
+    (signed_in, error): True when its models came back, False when the tool says it is signed out, else None."""
+    base = identity(provider, account)
+    found, error = _agy(db_path, account) if provider == 'agy' else _codex(db_path, base)
+    with _lock:
+        entries = _replace_live_base(_cache['entries'] if _cache['entries'] is not None else _claude(), provider, account, found)
+        errors = dict(_cache['errors'])
+        errors.pop(base, None)
+        if error:
+            errors[base] = error
+        _cache.update(entries=entries, errors=errors, checked_at=time.time())
+    return (True if found and not error else False if error == 'unauthenticated' else None), error
+
+
+def signed_in(provider, account):
+    """K-064: what the last catalog says about one agy/codex sign-in, without a subprocess:
+    True when its models were listed, False when the tool said signed out, None when not known yet."""
+    if _cache['entries'] is None:
+        return None
+    error = _cache['errors'].get(identity(provider, account))
+    if error:
+        return False if error == 'unauthenticated' else None
+    return True if _live_listed(snapshot(), provider, account) else None
+
+
 def snapshot():
     """The last catalog; before any refresh only the Claude fallback (no subprocess)."""
     entries = _cache['entries'] if _cache['entries'] is not None else _claude()

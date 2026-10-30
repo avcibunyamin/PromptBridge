@@ -131,7 +131,9 @@ export async function reconcile() {
 // ── F3-01b persistent works ──────────────────────────────────────────────────
 
 export interface RunRef { id: string; status: string; git_changed?: string[]   // TB-23: .git hooks/config the run left
-  tests?: TestRun | null; lint?: TestRun | null }   // TB-27/28: Conductor's sandboxed test / lint run before the reviewer
+  tests?: TestRun | null; lint?: TestRun | null
+  auth_base?: string | null   // K-060: WAITING_AUTH — the account to sign in again
+  reason?: string | null }   // K-062: why it failed, stopped or waits   // TB-27/28: Conductor's sandboxed test / lint run before the reviewer
 export type Check = 'tests' | 'lint'
 export interface TestRun { status: 'passed' | 'failed' | 'timeout' | 'not_run'; reason?: string | null; command?: string | null
   exit_code?: number | null; duration_s?: number | null }
@@ -188,6 +190,7 @@ export interface WorkMessage {
   team: { author: string[]; reviewer: string[] }
   wait?: { deadline_hours: number; max_attempts: number } | null   // F3-04: frozen quota wait, if chosen
   recipe?: { id: string; title: string; version: number } | null
+  read_only?: boolean   // K-057: nobody could change files in this run
   created_at: string
   session: RunRef | null
 }
@@ -203,9 +206,10 @@ export interface LegacySession { id: string; status: string; workspace_path: str
 
 const json = (body: unknown): RequestInit => ({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
 
-export async function listWorks(archived: boolean, cursor?: string | null): Promise<WorksPage> {
+export async function listWorks(archived: boolean, cursor?: string | null, search?: string): Promise<WorksPage> {
   const q = new URLSearchParams({ archived: String(archived), limit: '50' })
   if (cursor) q.set('cursor', cursor)
+  if (search?.trim()) q.set('q', search.trim())   // K-059: title or folder
   return (await _fetch(`/api/works?${q}`)).json()
 }
 
@@ -241,7 +245,7 @@ export async function previewTeam(team: { author: string[]; reviewer: string[] }
 
 export async function addMessage(wid: string, body: { client_message_id: string; text: string; policy_digest: string;
   team?: { author: string[]; reviewer: string[] }; wait_on_quota?: boolean; wait_deadline_hours?: number;
-  wait_max_attempts?: number; recipe?: string }): Promise<WorkMessage> {
+  wait_max_attempts?: number; recipe?: string; read_only?: boolean }): Promise<WorkMessage> {
   return (await _fetch(`/api/works/${encodeURIComponent(wid)}/messages`, json(body))).json()
 }
 
@@ -357,6 +361,13 @@ export async function listAccounts(): Promise<{ accounts: AccountItem[] }> {
 }
 export async function addAccount(body: AddAccountInput): Promise<{ account: AccountItem | null; accounts: AccountItem[] }> {
   return (await _fetch('/api/accounts', json(body))).json()
+}
+/** K-060: open this account's sign-in in Terminal; then ask whether it is signed in (re-lists its models). */
+export async function openAccountLogin(base: string): Promise<{ opened: boolean }> {
+  return (await _fetch(`/api/accounts/${encodeURIComponent(base)}/login`, { method: 'POST' })).json()
+}
+export async function checkAccountLogin(base: string): Promise<{ signed_in: boolean | null; error: string | null }> {
+  return (await _fetch(`/api/accounts/${encodeURIComponent(base)}/check`, { method: 'POST' })).json()
 }
 export async function removeAccount(base: string): Promise<{ deleted: string; accounts: AccountItem[] }> {
   return (await _fetch(`/api/accounts/${encodeURIComponent(base)}`, { method: 'DELETE' })).json()

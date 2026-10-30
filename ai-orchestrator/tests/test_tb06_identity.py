@@ -135,7 +135,9 @@ class Waterfall(unittest.IsolatedAsyncioTestCase):
     def attempts(self):
         return [(a['provider'], a['status']) for a in self.conn.execute('SELECT * FROM session_attempts ORDER BY started_at, attempt_no')]
 
-    async def test_three_quotas_reach_the_fourth_link_and_the_next_step_starts_at_the_top(self):
+    async def test_three_quotas_reach_the_fourth_link_and_the_next_step_skips_them(self):
+        # K-067: the correction step no longer starts at the top: the three accounts that just hit their quota are
+        # skipped (recorded as QUOTA_RECENT hand-offs), so codex is not opened again a minute later.
         chain = ['codex', 'codex@a', 'codex@b', 'claude']
         self.create(('author', 'reviewer', 'author'), chain)
         log = []
@@ -143,11 +145,13 @@ class Waterfall(unittest.IsolatedAsyncioTestCase):
         await SessionRunner(self.db, adapter_factory=factory).run_session('s')
         self.assertEqual(repo.get_session(self.conn, 's')['status'], 'SUCCEEDED')
         self.assertEqual(self.attempts(), [('codex', 'QUOTA'), ('codex@a', 'QUOTA'), ('codex@b', 'QUOTA'),
-                                           ('claude', 'COMPLETED'), ('claude', 'COMPLETED'), ('codex', 'COMPLETED')])
-        moves = [(p['from'], p['to']) for p in (json.loads(r[0]) for r in
+                                           ('claude', 'COMPLETED'), ('claude', 'COMPLETED'), ('claude', 'COMPLETED')])
+        moves = [(p['from'], p['to'], p['reason']) for p in (json.loads(r[0]) for r in
                  self.conn.execute("SELECT payload FROM session_events WHERE kind='handoff' ORDER BY seq"))]
-        self.assertEqual(moves, [('codex', 'codex@a'), ('codex@a', 'codex@b'), ('codex@b', 'claude')])
-        self.assertEqual([e['provider'] for e in log], ['codex', 'codex@a', 'codex@b', 'claude', 'claude', 'codex'])
+        self.assertEqual(moves, [('codex', 'codex@a', 'QUOTA_EXCEEDED'), ('codex@a', 'codex@b', 'QUOTA_EXCEEDED'),
+                                 ('codex@b', 'claude', 'QUOTA_EXCEEDED'), ('codex', 'codex@a', 'QUOTA_RECENT'),
+                                 ('codex@a', 'codex@b', 'QUOTA_RECENT'), ('codex@b', 'claude', 'QUOTA_RECENT')])
+        self.assertEqual([e['provider'] for e in log], ['codex', 'codex@a', 'codex@b', 'claude', 'claude', 'claude'])
 
     async def test_four_quotas_wait_for_capacity(self):
         self.create(('author',), ['codex', 'codex@a', 'codex@b', 'claude'])
@@ -182,6 +186,9 @@ class ResumeIdentity(unittest.IsolatedAsyncioTestCase):
     async def test_another_account_cannot_continue_the_thread(self):
         # Both author steps of run 1 fall back to codex@b, so its thread belongs to codex@b, not chain[0].
         await self.run_message('one', Scripted([], {'codex@a': [quota(), quota()]}))
+        # K-067 would skip codex@a for the next hour; age its quota errors so this test stays about thread identity.
+        self.conn.execute("UPDATE session_attempts SET ended_at='2020-01-01T00:00:00+00:00' WHERE error_code='QUOTA_EXCEEDED'")
+        self.conn.commit()
         self.assertEqual(await self.run_message('two', Scripted([], {})), ('FRESH', 'identity_changed'))
         self.assertEqual(await self.run_message('three', Scripted([], {})), ('RESUME', 'all_gates_passed'))
 

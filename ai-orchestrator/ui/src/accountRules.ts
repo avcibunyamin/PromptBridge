@@ -17,6 +17,7 @@ export interface AccountItem {
   in_default_team: boolean
   installed: boolean
   login: AccountLogin
+  signed_in?: boolean | null
 }
 
 export interface AddAccountInput {
@@ -31,7 +32,6 @@ export interface AccountGroup {
   items: AccountItem[]
 }
 
-export const ACCOUNT_NAME_RE = /^[a-z0-9][a-z0-9-]{0,15}$/
 
 export const PROVIDER_ORDER: readonly AccountProvider[] = ['agy', 'codex', 'claude', 'ollama']
 
@@ -47,8 +47,12 @@ export const ROLE_LABELS: Record<AccountRole, string> = {
   reviewer: t('settings.accounts.role.reviewer'),
 }
 
-export function isValidAccountName(value: string): boolean {
-  return ACCOUNT_NAME_RE.test(value)
+/** K-060: the server's `account_id` — any typed name to the id in folder names and `agy@id/model`.
+ *  '' when nothing usable is left. The server stays the authority; this only previews it. */
+export function accountId(name: string): string {
+  // dotless i / dotted capital I first: NFKD alone would drop them
+  const ascii = name.replace(/\u0131/g, 'i').replace(/\u0130/g, 'I').normalize('NFKD').replace(/[^\x00-\x7f]/g, '').toLowerCase()
+  return ascii.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 16).replace(/-+$/, '')
 }
 
 export function providerSupportsAccount(provider: AccountProvider): boolean {
@@ -70,23 +74,14 @@ export function validateAccountInput(
 ): ValidatedAccountInput {
   const trimmed = (rawAccount ?? '').trim()
 
+  const id = accountId(trimmed)
   if (provider === 'agy') {
     if (!trimmed) {
       return { ok: false, error: t('settings.accounts.err.agyAccountRequired') }
     }
-    if (!isValidAccountName(trimmed)) {
-      return {
-        ok: false,
-        error: t('settings.accounts.err.invalidAccountName'),
-      }
-    }
+    if (!id) return { ok: false, error: t('settings.accounts.err.unusableName') }
   } else if (provider === 'codex') {
-    if (trimmed && !isValidAccountName(trimmed)) {
-      return {
-        ok: false,
-        error: t('settings.accounts.err.invalidAccountName'),
-      }
-    }
+    if (trimmed && !id) return { ok: false, error: t('settings.accounts.err.unusableName') }
   } else if (trimmed) {
     return { ok: false, error: t('settings.accounts.err.accountNotUsed', { provider: PROVIDER_LABELS[provider] }) }
   }
@@ -97,7 +92,7 @@ export function validateAccountInput(
   }
 
   const account = providerSupportsAccount(provider) && trimmed ? trimmed : null
-  const base = account ? `${provider}@${account}` : provider
+  const base = account ? `${provider}@${id}` : provider
   return {
     ok: true,
     value: { provider, account, roles },

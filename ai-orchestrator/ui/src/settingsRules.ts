@@ -6,10 +6,10 @@ export type Theme = 'system' | 'dark' | 'light'
 export type WorkWaitSetting = { enabled: boolean; deadline_hours?: number; max_attempts?: number }
 export type WorkWaitChoice = { wait_on_quota: true; wait_deadline_hours: number; wait_max_attempts: number }
 export type Settings = { version: 1; team: Team | null; accepted_digest: string | null; theme: Theme; github: { clone_dir: string | null }
-  preview?: { sandbox: boolean }; pinned_works?: string[]; work_teams?: Record<string, Team>; work_waits?: Record<string, WorkWaitSetting> }   // TB-22/TB-37/TB-41; absent in files written before them
+  preview?: { sandbox: boolean }; pinned_works?: string[]; work_teams?: Record<string, Team>; work_waits?: Record<string, WorkWaitSetting>; step_minutes?: number }   // TB-22/TB-37/TB-41/K-061; absent in files written before them
 export type SettingsView = { settings: Settings; error: string | null; problems: unknown[]; current_digest: string | null }
 export type SettingsPatch = { team?: Team | null; theme?: Theme; github?: { clone_dir: string | null }; preview?: { sandbox: boolean }; pinned_works?: string[]
-  work_teams?: Record<string, Team>; work_waits?: Record<string, WorkWaitSetting> }
+  work_teams?: Record<string, Team>; work_waits?: Record<string, WorkWaitSetting>; step_minutes?: number }
 
 export const PINNED_WORKS_LIMIT = 20
 export const WORK_SETTINGS_LIMIT = 50

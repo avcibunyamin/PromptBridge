@@ -173,11 +173,9 @@ class AccountsTest(unittest.TestCase):
         bad_payloads = (
             {'provider': 'agy', 'account': None, 'roles': ['author']},
             {'provider': 'agy', 'account': '', 'roles': ['author']},
-            {'provider': 'agy', 'account': 'Buyuk', 'roles': ['author']},
-            {'provider': 'agy', 'account': '-tire', 'roles': ['author']},
-            {'provider': 'agy', 'account': 'a' * 17, 'roles': ['author']},
-            {'provider': 'agy', 'account': 'a/b', 'roles': ['author']},
-            {'provider': 'codex', 'account': 'BAD_NAME', 'roles': ['author']},
+            {'provider': 'agy', 'account': '!!! ---', 'roles': ['author']},   # K-060: nothing usable left
+            {'provider': 'agy', 'account': 'a' * 61, 'roles': ['author']},
+            {'provider': 'codex', 'account': '***', 'roles': ['author']},
             {'provider': 'claude', 'account': 'h1', 'roles': ['author']},
             {'provider': 'ollama', 'account': 'h1', 'roles': ['reviewer']},
             {'provider': 'agy', 'account': 'valid1', 'roles': []},
@@ -188,6 +186,43 @@ class AccountsTest(unittest.TestCase):
                 self.assertEqual(r.status_code, 422, r.text)
         self.assertEqual(self.providers_file.read_text(encoding='utf-8'), INITIAL_YAML)
         self.assertFalse(self.changes_file.exists())
+
+    def test_free_names_become_safe_ids_and_clash_only_on_the_same_id(self):   # K-060
+        from app.accounts import account_id
+        self.assertEqual([account_id(n) for n in ('İş Hesabı 2', 'Büyük_Çalışma', '  Ana / Şirket  ', 'a' * 30, '-x-', None, '  ')],
+                         ['is-hesabi-2', 'buyuk-calisma', 'ana-sirket', 'a' * 16, 'x', None, None])
+        r = self.client.post('/api/accounts', json={'provider': 'agy', 'account': 'İş Hesabı 2', 'roles': ['author']})
+        self.assertEqual((r.status_code, r.json()['account']['base']), (200, 'agy@is-hesabi-2'), r.text)
+        self.assertTrue(Path(agy_home(self.db, 'is-hesabi-2')).is_dir())
+        again = self.client.post('/api/accounts', json={'provider': 'agy', 'account': 'is hesabi 2', 'roles': ['reviewer']})
+        self.assertEqual((again.status_code, again.json()['code']), (409, 'exists'))
+        self.assertIn('agy@is-hesabi-2', again.json()['detail'])
+
+    def test_sign_in_opens_terminal_with_a_fixed_script_and_check_reports_it(self):   # K-060
+        calls = []
+        with patch('app.accounts._open_terminal', side_effect=calls.append):
+            r = self.client.post('/api/accounts/agy@h1/login')
+        self.assertEqual(r.status_code, 200, r.text)
+        script = self.system / 'login' / 'agy-h1.command'
+        self.assertEqual(calls, [script])
+        self.assertEqual(stat.S_IMODE(script.stat().st_mode), 0o700)
+        body = script.read_text()
+        self.assertIn(f"HOME={agy_home(self.db, 'h1')} exec {(self.home / 'fake-agy').resolve()}", body)
+        self.assertTrue((Path(agy_home(self.db, 'h1')) / 'Library/Keychains/agy.keychain-db').exists())   # keychain made first
+        with patch('app.accounts._open_terminal', side_effect=calls.append):
+            self.assertEqual(self.client.post('/api/accounts/codex@is/login').status_code, 200)
+        self.assertIn('login', (self.system / 'login' / 'codex-is.command').read_text())
+        for base, code in (('claude', 422), ('ollama', 422), ('agy@yok', 404), ('agy@h1/model', 404)):   # a slash is no route
+            with self.subTest(base=base):
+                self.assertEqual(self.client.post(f'/api/accounts/{base}/login').status_code, code)
+        with patch('app.accounts._open_terminal', side_effect=OSError('no Terminal')):
+            failed = self.client.post('/api/accounts/agy@h1/login')
+        self.assertEqual((failed.status_code, failed.json()['code']), (409, 'login_open_failed'))
+        with patch('app.accounts.catalog.refresh_base', return_value=(False, 'unauthenticated')) as probe:
+            self.assertEqual(self.client.post('/api/accounts/agy@h1/check').json(), {'signed_in': False, 'error': 'unauthenticated'})
+        probe.assert_called_once_with(self.db, 'agy', 'h1')
+        evil = {'Origin': 'http://evil.example'}
+        self.assertEqual(self.client.post('/api/accounts/agy@h1/login', headers=evil).status_code, 403)
 
     def test_duplicate_base_returns_409_exists(self):
         for payload in (

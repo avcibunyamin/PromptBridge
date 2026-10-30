@@ -70,6 +70,14 @@ class Settings(unittest.TestCase):
         saved = json.loads(self.file.read_text())
         self.assertEqual((saved['team'], saved['accepted_digest'], saved['theme']), (None, None, 'dark'))
 
+    def test_step_minutes_is_bounded(self):   # K-061
+        self.assertEqual(self.put({'step_minutes': 90}).status_code, 200)
+        self.assertEqual(self.client.get('/api/settings').json()['settings']['step_minutes'], 90)
+        for bad in (5, 181, '60', 60.5):
+            with self.subTest(bad=bad):
+                self.assertEqual(self.put({'step_minutes': bad}).status_code, 422)
+        self.assertEqual(self.client.get('/api/settings').json()['settings']['step_minutes'], 90)
+
     def test_clone_dir_rules(self):
         projects = self.home / 'Projeler'; projects.mkdir()
         for value, code in (('Projeler', 'not_absolute'), ('/tmp', 'outside_home'), (str(self.home / 'yok'), 'not_a_directory'),

@@ -214,6 +214,31 @@ def clone_root(db_path) -> Path:
     return Path(value).resolve()
 
 
+def _same_repo(path, repo) -> bool:
+    """`path`'s origin is `repo`; an origin under another owner with the same name is asked of GitHub, which
+    redirects a renamed account (K-056: bunyaminavc/techlex → avcibunyamin/techlex). The raw config value is read and a
+    repository with its own url rewrites (or anything off the allowlist) never matches."""
+    marker = Path(path) / '.git'
+    if marker.is_symlink() or not marker.is_dir():   # no gitfile or link into a repository elsewhere
+        return False
+    try:
+        if unsafe_config(path):
+            return False
+        urls = git(path, 'config', '--local', '--get-all', 'remote.origin.url').split()   # this repo's own, one value
+    except GitHubError:
+        return False
+    name = remote_repo(urls[0]) if len(urls) == 1 else None
+    if not name or name.split('/')[1].lower() != repo.split('/')[1].lower():
+        return False
+    if name.lower() == repo.lower():
+        return True
+    _, out = gh('repo', 'view', name, '--json', 'nameWithOwner', timeout=TIMEOUT)   # a gh failure is reported, not "occupied"
+    try:
+        return str(json.loads(out).get('nameWithOwner', '')).lower() == repo.lower()
+    except (ValueError, AttributeError):
+        raise GitHubError('gh_failed', 'gh çıktısı okunamadı', 409) from None
+
+
 def clone(db_path, repo):
     repo, root = repo_name(repo), clone_root(db_path)
     target = root / repo.split('/')[1]
@@ -221,12 +246,29 @@ def clone(db_path, repo):
         raise GitHubError('target_exists', f'{target} bir klasör değil')
     if target.exists():   # also catches a different-case name on a case-insensitive disk
         try:
-            same = (remote_repo(git(target, 'remote', 'get-url', 'origin').strip()) or '').lower() == repo.lower()
-        except GitHubError:
-            same = False
-        if not same or target.resolve().parent != root:
+            same_name = sorted(p for p in root.iterdir() if p.name.lower() == target.name.lower())
+        except OSError:
+            same_name = []
+        target = next((p for p in same_name if p.name == target.name), same_name[0] if same_name else target)   # disk's spelling
+        if target.resolve().parent != root:
             raise GitHubError('target_occupied', f'{target} başka bir içerikle dolu')
-        return {'path': str(target.resolve()), 'cloned': False}
+        if os.path.lexists(target / '.git'):   # its own repository (even a broken link), never a parent one above it
+            if _same_repo(target, repo):
+                return {'path': str(target.resolve()), 'cloned': False}
+        else:   # K-056: a plain folder of that name that holds the clone one level down (e.g. TechLex/pratik-kelime)
+            from app.isolation import _child_repos   # isolation imports this module
+            lookup_error = None
+            for child in _child_repos(target):
+                try:
+                    if _same_repo(child, repo):
+                        return {'path': child, 'cloned': False}
+                except GitHubError as exc:
+                    # A failed redirect lookup for one candidate must not hide a later exact match.
+                    if lookup_error is None:
+                        lookup_error = exc
+            if lookup_error is not None:
+                raise lookup_error
+        raise GitHubError('target_occupied', f'{target} başka bir içerikle dolu')
     try:
         gh('repo', 'clone', repo, str(target), timeout=CLONE_TIMEOUT)
     except GitHubError:

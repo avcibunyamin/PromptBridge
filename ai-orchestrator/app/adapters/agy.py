@@ -13,6 +13,7 @@ import pwd
 import stat
 import subprocess
 import tempfile
+import time
 from app.adapters.base import BaseAdapter, AdapterResult
 from app.adapters.process import executable, stop_process, spawn_owned, release_gate
 from app.provider_errors import agy_error
@@ -76,6 +77,19 @@ def _security(home, *args):
                           capture_output=True, timeout=10).returncode
 
 
+# K-061: what a tool step is about, for the live line — a command or a path, never file contents.
+DETAIL_KEYS = ('CommandLine', 'TargetFile', 'AbsolutePath', 'File', 'Path', 'DirectoryPath', 'SearchPath')   # no query/URL: may carry tokens
+
+
+def tool_detail(info):
+    params = (info or {}).get('parameters') if isinstance(info, dict) else None
+    if isinstance(params, dict):
+        for key in DETAIL_KEYS:
+            if isinstance(params.get(key), str):
+                return ' '.join(params[key].split())[:200]
+    return ''
+
+
 def prepare_home(home):
     """The environment for every agy process: its own HOME with its own unlocked keychain and pinned
     empty permissions. Raises ValueError when any of it cannot be ensured (the process is not started)."""
@@ -89,15 +103,38 @@ def prepare_home(home):
         raise ValueError(f'agy home is not a real directory: {home}')
     # K-018/3: a keychain inside this HOME keeps macOS from asking for one (a dialog nobody answers).
     # Re-created if the home was wiped; the user's own keychain search list resolves `~` to the real home.
-    keychain = os.path.join(home, 'Library', 'Keychains', 'login.keychain-db')
+    # K-058: macOS 27 no longer unlocks a file named login.keychain-db from the command line, and the ones it
+    # has locked no longer take the empty password. A new keychain is agy.keychain-db with login.keychain-db
+    # pointing at it, so agy (which uses this HOME's default, login, keychain) still finds it. An old
+    # login.keychain-db is used while it still unlocks; one that does not is set aside, never deleted, and the
+    # account signs in again.
+    keychains = os.path.join(home, 'Library', 'Keychains')
+    keychain, login = os.path.join(keychains, 'agy.keychain-db'), os.path.join(keychains, 'login.keychain-db')
+    os.makedirs(keychains, 0o700, exist_ok=True)
+    if any(not stat.S_ISDIR(os.lstat(p).st_mode) for p in (os.path.dirname(keychains), keychains)):
+        raise ValueError('agy keychain folder is not a real directory')
+    if os.path.lexists(login) and not os.path.islink(login):
+        if not _security(home, 'unlock-keychain', '-p', '', login):
+            pin_permissions(home)
+            return {**os.environ, 'HOME': home}
+        try:   # link + unlink: never replaces an earlier set-aside file
+            os.link(login, f'{login}.unopenable-{time.time_ns()}')
+            os.unlink(login)
+        except FileNotFoundError:   # a concurrent run of this account set it aside first
+            pass
     if not os.path.exists(keychain):
-        os.makedirs(os.path.dirname(keychain), 0o700, exist_ok=True)
         # Two first runs of one account may race: losing `create-keychain` is fine once the file exists.
         if _security(home, 'create-keychain', '-p', '', keychain) and not os.path.exists(keychain):
             raise ValueError('could not create the agy keychain')
         if _security(home, 'set-keychain-settings', keychain):
             raise ValueError('could not configure the agy keychain')
         os.chmod(keychain, 0o600)
+    try:
+        os.symlink('agy.keychain-db', login)
+    except FileExistsError:
+        pass
+    if os.path.realpath(login) != os.path.realpath(keychain):
+        raise ValueError('login.keychain-db must point at the agy keychain')
     # Unlock first: a locked keychain makes macOS show a password dialog.
     if _security(home, 'unlock-keychain', '-p', '', keychain):
         raise ValueError('could not unlock the agy keychain')
@@ -186,6 +223,11 @@ class AgyAdapter(BaseAdapter):
                     tools = (data.get('init') or {}).get('tools')
                     yield {'type': 'started', 'provider_session_id': conversation, 'model': model,
                            'tools': [str(t) for t in tools][:200] if isinstance(tools, list) else None}
+                elif event == 'step_update':
+                    step = data.get('step_update') or {}
+                    if isinstance(step, dict) and step.get('step_type') == 'tool' and step.get('state') == 'ACTIVE':
+                        yield {'type': 'activity', 'tool': str(step.get('tool_name') or 'tool')[:60],
+                               'detail': tool_detail(step.get('tool_info'))}
                 elif event == 'result':
                     if result is not None:
                         raise ValueError('duplicate agy result')

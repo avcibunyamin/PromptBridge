@@ -239,6 +239,15 @@ class Catalog(unittest.TestCase):
         self.assertEqual(snap['errors'], {'agy@h1': 'unauthenticated', 'agy@h2': 'unauthenticated'})
         self.assertEqual(catalog.status('agy@h1/gemini-3.1-pro-high'), 'unknown')     # unknown, not "removed"
 
+    def test_one_account_is_relisted_after_a_sign_in(self):   # K-060
+        with patch.dict(os.environ, {'FAKE_AGY_SIGNED_OUT': '1'}):
+            catalog.refresh(self.db, self.config)
+            self.assertEqual(catalog.refresh_base(self.db, 'agy', 'h1'), (False, 'unauthenticated'))
+        self.assertEqual(catalog.refresh_base(self.db, 'agy', 'h1'), (True, None))   # signed in now
+        snap = catalog.snapshot()
+        self.assertEqual(snap['errors'], {'agy@h2': 'unauthenticated'})            # only h1 changed
+        self.assertEqual(catalog.status('agy@h1/gemini-3.1-pro-high'), 'available')
+
     def test_a_hanging_listing_times_out_and_its_group_is_gone(self):
         from app import provider_auth
         from app.adapters.process import identity

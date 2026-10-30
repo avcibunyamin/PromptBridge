@@ -159,6 +159,24 @@ class Api(unittest.TestCase):
         stale = self.send(p['digest'], team)                                   # budget changed → 409
         self.assertEqual((stale.status_code, stale.json()['code']), (409, 'conflict'))
 
+    def test_read_only_keeps_the_accepted_digest_and_is_frozen(self):   # K-057
+        p = self.preview('codex', 'claude').json(); team = {'author': ['codex'], 'reviewer': ['claude']}
+        body = {'client_message_id': str(uuid4()), 'text': 'goal', 'policy_digest': p['digest'], 'team': team, 'read_only': True}
+        r = self.c.post(f'/api/works/{self.wid}/messages', json=body)
+        self.assertEqual(r.status_code, 201, r.text)
+        self.assertEqual((r.json()['read_only'], r.json()['policy_digest'], r.json()['team']), (True, p['digest'], team))
+        conn = store.connect(self.root / '.system/state.db'); self.addCleanup(conn.close)
+        frozen = json.loads(conn.execute('SELECT policy_json FROM work_messages').fetchone()[0])
+        self.assertIs(frozen['read_only'], True)
+        self.assertEqual([i['profile'] for i in frozen['roles']['author']], ['READ_ONLY'])
+        self.assertEqual([i['profile'] for i in frozen['roles']['reviewer']], ['READ_ONLY'])
+        self.assertEqual(self.c.post(f'/api/works/{self.wid}/messages', json=body).status_code, 200)   # replay
+        other = self.c.post(f'/api/works/{self.wid}/messages', json=dict(body, read_only=False))
+        self.assertEqual((other.status_code, other.json()['code']), (409, 'IDEMPOTENCY_CONFLICT'))   # part of the payload
+        bad = self.c.post(f'/api/works/{self.wid}/messages', json=dict(body, client_message_id=str(uuid4()), read_only='yes'))
+        self.assertEqual(bad.status_code, 422)
+        self.assertIs(self.send(p['digest'], team).json()['read_only'], False)
+
     def test_idempotency_includes_the_team(self):
         p = self.preview('codex', 'claude').json(); cmid = str(uuid4())
         self.assertEqual(self.send(p['digest'], {'author': ['codex'], 'reviewer': ['claude']}, cmid=cmid).status_code, 201)

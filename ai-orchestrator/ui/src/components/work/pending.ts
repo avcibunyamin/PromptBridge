@@ -10,7 +10,8 @@
 export type PendingMessage = { client_message_id: string; text: string; policy_digest: string;
   team?: { author: string[]; reviewer: string[] }   // F3-03: resent byte-for-byte (the team is in the payload hash)
   wait_on_quota?: boolean; wait_deadline_hours?: number; wait_max_attempts?: number   // F3-04: hashed the same way
-  recipe?: string }   // TB-45: frozen in the payload hash
+  recipe?: string   // TB-45: frozen in the payload hash
+  read_only?: boolean }   // K-057: hashed too; the author may not change files either
 export type PendingCreate = { client_work_id: string; title: string; workspace_path: string; isolate?: boolean; message: PendingMessage;
   created_work_id?: string }   // set once the server created the work (reload reopens it)
 
@@ -48,4 +49,5 @@ export const answered = (e: unknown) => {
  *  (memory only — nothing was stored, so the text returns to the composer with the reason). F3-03: the
  *  selected team comes along, so the work view re-previews it (problems beside the selection, re-accept on 409). */
 export const rejectedFirst = new Map<string, { text: string; message: string; code?: string;
-  team?: { author: string[]; reviewer: string[] }; wait?: { wait_on_quota: true; wait_deadline_hours: number; wait_max_attempts: number } | null }>()
+  team?: { author: string[]; reviewer: string[] }; wait?: { wait_on_quota: true; wait_deadline_hours: number; wait_max_attempts: number } | null;
+  read_only?: boolean }>()

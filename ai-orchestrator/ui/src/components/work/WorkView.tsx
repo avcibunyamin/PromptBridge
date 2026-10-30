@@ -1,13 +1,17 @@
 import { canCommand, canInterrupt, mobile } from '../../mobile'
 import { events } from '../../mobile'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowUp, LoaderCircle, Pencil, Settings2 } from 'lucide-react'
+import { ArrowUp, LoaderCircle, Pencil, Settings2, Square } from 'lucide-react'
 import { getWork, listAllMessages, addMessage, cancelMessage, patchWork, deleteWork, continueWork, ApiError, type Work, type WorkMessage } from '../../api'
 import { Pill, labels, missingProvider, newId, api, loopLine, outcomeLabels, Modal, teamOf, WaitOptions, type Policy, type Team, type WaitChoice } from './shared'
 import { TeamPicker, type TeamSelection } from './TeamPicker'
 import { click, openSelect, useSlash, type SlashCommand } from './SlashMenu'
 import { SessionView } from './SessionView'
+import { RunLive } from './RunLive'
+import { canResume, reasonKind, workState } from './workStatus'
+import { SignIn } from '../SignIn'
 import { PreviewPanel } from './PreviewPanel'
+import { FinalAnswer } from './FinalAnswer'
 import { GitHubPanel } from './GitHubPanel'
 import { TestPill, TestsPanel } from './TestsPanel'
 import { IsolationPanel } from './IsolationPanel'
@@ -50,6 +54,8 @@ export function WorkView({workId,onChange}:{workId:string;onChange:()=>void}){
   const [firstTeam,setFirstTeam]=useState<Team|null>(null)   // a rejected first message's team (no message stored yet)
   const [wait,setWait]=useState<WaitChoice|null>(null)   // F3-04: opt-in quota wait for the next message
   const [recipe,setRecipe]=useState<string|null>(null)   // TB-45: role checklist recipe for the next message
+  const [stopping,setStopping]=useState(false)   // K-063: the composer's stop button was pressed
+  const [readOnly,setReadOnly]=useState(false)   // K-057: the next message runs with nobody allowed to change files
   const [text,setText]=useState(''), [pending,setPending]=useState<PendingMessage|null>(null), [uncertain,setUncertain]=useState(false)
   const [editing,setEditing]=useState(false), [title,setTitle]=useState(''), [editRevision,setEditRevision]=useState(0)  // CAS base = what the user started editing
   const [open,setOpen]=useState<Set<string>>(new Set()), [confirmContinue,setConfirmContinue]=useState(false)
@@ -89,7 +95,7 @@ export function WorkView({workId,onChange}:{workId:string;onChange:()=>void}){
     setShowWorkSettings(false);setConfirmDelete(false);setSettingsError('');setSettingsNotice('');setModalTeam(null)
     const p=pendingMessage.get(workId);setPending(p);setUncertain(!!p);setRecipe(p?.recipe??null)
     const first=rejectedFirst.get(workId);rejectedFirst.delete(workId)
-    setFirstTeam(first?.team??null);setWait(first?.wait??null)
+    setFirstTeam(first?.team??null);setWait(first?.wait??null);setReadOnly(!!first?.read_only)
     if(first){setText(first.text);setError(first.code&&codes[first.code]?codes[first.code]:first.message)}
     api<Policy>('/api/sessions/providers').then(setPolicy).catch(e=>setError(String(e)))
     if(canCommand())void loadSettings().then(s=>{setSettings(s);if(!first?.wait)setWait(initialWorkWait(workId,s))});else setSettings(null)
@@ -129,12 +135,12 @@ export function WorkView({workId,onChange}:{workId:string;onChange:()=>void}){
     pendingMessage.set(workId,p);setPending(p);setUncertain(false)   // frozen before the request leaves
     try{
       await addMessage(workId,p)
-      pendingMessage.clear(workId);setPending(null);setText('');setRecipe(null);setAcceptedFor(null)
+      pendingMessage.clear(workId);setPending(null);setText('');setRecipe(null);setReadOnly(false);setAcceptedFor(null)
       await refresh();onChange()
     }catch(e){
       if(answered(e)){
         // Definitely not stored: release the id, give the text back for editing.
-        pendingMessage.clear(workId);setPending(null);setText(p.text);setRecipe(p.recipe??null);setError(say(e))
+        pendingMessage.clear(workId);setPending(null);setText(p.text);setRecipe(p.recipe??null);setReadOnly(!!p.read_only);setError(say(e))
         if(e instanceof ApiError&&(e.code==='conflict'||e.code==='team_invalid')){   // ceiling or policy changed: re-preview, re-accept
           setAcceptedFor(null)
           try{setPolicy(await api<Policy>('/api/sessions/providers'))}catch(x){setPolicy(null);setError(String(x))}
@@ -146,7 +152,7 @@ export function WorkView({workId,onChange}:{workId:string;onChange:()=>void}){
     const preview=sel?.preview
     if(!policy||!sel||!preview||!text.trim()||busy||pending)return
     if(mustAccept&&!accepted)return
-    void send({client_message_id:newId(),text,policy_digest:preview.digest,team:sel.team,...wait,...(recipe?{recipe}:{})})
+    void send({client_message_id:newId(),text,policy_digest:preview.digest,team:sel.team,...wait,...(recipe?{recipe}:{}),...(readOnly?{read_only:true}:{})})
   }
   /** Drop an uncertain send only after asking the server about the same id; offline keeps the record. */
   async function discardPending(p:PendingMessage){
@@ -155,8 +161,8 @@ export function WorkView({workId,onChange}:{workId:string;onChange:()=>void}){
     setBusy(false)
     if(r==='kept'){setError(t('work.discardKept'));return}
     setPending(null);setUncertain(false)
-    if(r==='sent'){setText(t=>t===p.text?'':t);setRecipe(r0=>r0===(p.recipe??null)?null:r0)}   // the server has it: nothing to resend
-    else{setText(p.text);setRecipe(p.recipe??null)}                                           // definitely absent: the text returns for editing
+    if(r==='sent'){setText(t=>t===p.text?'':t);setRecipe(r0=>r0===(p.recipe??null)?null:r0);setReadOnly(false)}   // the server has it: nothing to resend
+    else{setText(p.text);setRecipe(p.recipe??null);setReadOnly(!!p.read_only)}                                           // definitely absent: the text returns for editing
     void refresh()
   }
 
@@ -241,6 +247,7 @@ export function WorkView({workId,onChange}:{workId:string;onChange:()=>void}){
     {name:'kota',hint:t('work.cmd.quota'),run:click('.composer .usage-ring')},
     {name:'takim',hint:t('work.cmd.team'),run:click('.composer .composer-tools')},
     ...RECIPES.map(r=>({name:'tarif-'+r.id,hint:t('work.cmd.recipe',{title:r.title}),run:()=>setRecipe(r.id)})),
+    {name:'yalniz-incele',hint:t('work.cmd.readOnly'),run:()=>setReadOnly(true)},
     ...(!mobile.active&&work&&!work.archived_at?[
       {name:'onizleme',hint:t('work.cmd.preview'),run:()=>setShowPreview(true)},
       {name:'testler',hint:t('work.cmd.tests'),run:()=>setShowTests(true)},
@@ -254,16 +261,47 @@ export function WorkView({workId,onChange}:{workId:string;onChange:()=>void}){
   const cannotSend=!policy||!preview||missingProvider(policy,preview.policy)
   const mustAccept=!!preview&&chainNeedsAcceptance(preview.digest,work.latest_policy_digest,acceptedDigest(settings??null))
   const accepted=!!preview&&acceptedFor===preview.digest
+  // K-062: the strip above the composer always says whether something runs, and if not, how the last run ended.
+  const lastRun=[...messages].reverse().find(m=>m.session)?.session??null
+  const state=workState({latestStatus:work.latest_session?.status??null,pendingMessages:work.pending_messages})
+  const why=reasonKind(lastRun?.reason)
+  const statusText={running:t('work.status.running'),queued:t('work.status.queued'),
+    waiting:t('work.status.waiting',{label:labels[work.latest_session?.status||'']||work.latest_session?.status||''}),
+    message_queued:work.blocked_reason&&blockers[work.blocked_reason]?t('work.status.messageQueuedBlocked'):t('work.status.messageQueued'),
+    done:t('work.status.done'),stopped:t('work.status.stopped'),empty:t('work.status.empty'),
+    failed:why==='timeout'?t('work.status.failedTimeout'):why==='auth'?t('work.status.failedAuth'):t('work.status.failed')}[state]
+  async function resumeWork(){   // one click: open the queue if it is held, then send “continue where you left off”
+    const p=sel?.preview
+    if(!work||!policy||!sel||!p||busy||pending)return
+    if(mustAccept&&!accepted){setError(t('work.status.acceptFirst'));return}
+    if(work.blocked_reason==='needs_review_decision'&&!outcome)return   // the loop outcome is needed to continue
+    if((work.blocked_reason==='needs_continue'||work.blocked_reason==='needs_review_decision')&&work.latest_session){
+      setBusy(true);setError('')
+      try{await continueWork(workId,work.latest_session.id,work.blocked_reason==='needs_review_decision'?outcome||undefined:undefined)}
+      catch(e){setError(say(e));await refresh();return}finally{setBusy(false)}
+    }
+    await send({client_message_id:newId(),text:t('work.status.resumeText'),policy_digest:p.digest,team:sel.team,...wait})
+  }
   const chainLine=(tm:Team)=>t('work.chainLine',{author:tm.author.join(' → '),reviewer:tm.reviewer.join(' → ')})
   const reloadPolicy=async()=>{setPolicy(await api<Policy>('/api/sessions/providers'))}
   const lastSeq=messages.length?messages[messages.length-1].seq:null
   const savedWorkTeam=workSavedTeam(settings,workId)
   const selectedRecipe=recipe?RECIPES.find(r=>r.id===recipe)??null:null
   // K-039: a round send button at the bar's right end, like Claude's
-  const sendButton=<button className="btn primary send round" aria-busy={busy} disabled={busy||!!pending||!text.trim()||cannotSend||(mustAccept&&!accepted)}
+  // K-063: while a run is going and nothing is typed, the same round button stops it (like Claude); typing queues instead
+  const activeRun=['RUNNING','QUEUED'].includes(work.latest_session?.status||'')?work.latest_session:null
+  async function stopRun(){if(!activeRun||stopping)return;setStopping(true);setError('');try{
+    await api(`/api/sessions/${activeRun.id}/cancel`,{method:'POST'});await refresh();onChange()
+  }catch(e){setError(say(e))}finally{setStopping(false)}}
+  const sendButton=activeRun&&!text.trim()&&canInterrupt()
+    ?<button type="button" className="btn danger send round" aria-busy={stopping} disabled={stopping} onClick={()=>void stopRun()}
+      aria-label={stopping?t('work.stopping'):t('work.stopRun')} title={t('work.stopRun')}>
+      {stopping?<LoaderCircle className="spin" aria-hidden/>:<Square aria-hidden fill="currentColor"/>}</button>
+    :<button className="btn primary send round" aria-busy={busy} disabled={busy||!!pending||!text.trim()||cannotSend||(mustAccept&&!accepted)}
     aria-label={busy?t('work.sending'):running?t('work.queueAdd'):t('work.send')} title={running?t('work.queueAddShortcut'):t('work.sendShortcut')}>
     {busy?<LoaderCircle className="spin" aria-hidden/>:<ArrowUp aria-hidden/>}</button>
-  return <div className="work-view">
+  const side=!mobile.active&&!work.archived_at&&showPreview   // K-065: the running project sits to the right of the chat
+  return <div className={'work-split'+(side?' on':'')}><div className="work-view">
     <div className="run-head"><div>
       {editing?<form className="title-edit" onSubmit={e=>{e.preventDefault();void saveTitle()}}>
         <label htmlFor="work-title" className="sr-only">{t('work.titleLabel')}</label>
@@ -291,11 +329,10 @@ export function WorkView({workId,onChange}:{workId:string;onChange:()=>void}){
     </div>
     {/* With a composer the error is shown next to it (sticky, so a failed send is visible where the text is kept). */}
     {error&&work.archived_at&&<div className="error-banner" role="alert">{error}</div>}
-    {!mobile.active&&!work.archived_at&&showPreview&&<PreviewPanel workspacePath={work.workspace_path}/>}
     {!mobile.active&&showCopy&&work.isolation&&<IsolationPanel work={work} onClose={()=>{setShowCopy(false);void refresh()}}/>}
     {!mobile.active&&showTests&&<TestsPanel workId={workId} onClose={()=>setShowTests(false)}/>}
     {!mobile.active&&showGitHub&&<GitHubPanel workId={workId} title={work.title} onClose={()=>{setShowGitHub(false);void refresh()}}/>}
-    {showWorkSettings&&canCommand()&&<Modal label={t('work.settingsModal.title')} busy={busy||settingsBusy} onClose={closeWorkSettings}>
+    {showWorkSettings&&canCommand()&&<Modal wide label={t('work.settingsModal.title')} busy={busy||settingsBusy} onClose={closeWorkSettings}>
       <h3>{t('work.settingsModal.title')}</h3>
       {settingsError&&<div className="error-banner" role="alert">{settingsError}</div>}
       {settingsNotice&&<p className="info-note" role="status">{settingsNotice}</p>}
@@ -381,6 +418,7 @@ export function WorkView({workId,onChange}:{workId:string;onChange:()=>void}){
           <p className="message-text">{m.text}</p>
           <div className="bubble-meta"><span className="seq mono">#{m.seq}</span><span>{new Date(m.created_at).toLocaleString(locale)}</span>
             {m.recipe&&<span className="pill idle">{t('work.recipePill',{title:m.recipe.title,version:m.recipe.version})}</span>}
+            {m.read_only&&<span className="pill idle">{t('work.readOnlyPill')}</span>}
             {m.status==='PENDING'&&<><span className="pill idle"><span className="d" aria-hidden="true"/>{t('work.queuedForNextRun')}</span>{canInterrupt()&&<button className="btn small" disabled={busy} onClick={()=>void cancelQueued(m)}>{t('work.removeFromQueue')}</button>}</>}
             {m.status==='CANCELLED'&&<span className="pill idle">{t('work.cancelledNeverRan')}</span>}</div>
         </div>
@@ -388,7 +426,9 @@ export function WorkView({workId,onChange}:{workId:string;onChange:()=>void}){
           <div className="run-card-head"><span className="who">PromptBridge</span><Pill status={m.session.status}/>
             <span className="run-line">{runLine(m.team,short)}</span>{m.session.tests&&<TestPill run={m.session.tests}/>}{m.session.lint&&<TestPill run={m.session.lint} check="lint"/>}<span className="spacer"/>
             <button className="btn small ghost" aria-expanded={isOpen(m.id)} onClick={()=>toggle(m.id)}>{isOpen(m.id)?t('work.hideDetails'):t('work.showDetails')}</button></div>
+          {m.session.status==='WAITING_AUTH'&&m.session.auth_base&&<AuthNeeded base={m.session.auth_base} sessionId={m.session.id} onDone={()=>{void refresh();onChange()}}/>}
           {!!m.session.git_changed?.length&&<p className="notice" role="alert"><strong>{t('work.gitChangedLead')}</strong> <span className="mono">{m.session.git_changed.join(', ')}</span>{t('work.gitChangedTail')}</p>}
+          {!isOpen(m.id)&&m.session.status==='SUCCEEDED'&&m.id===messages[messages.length-1]?.id&&<FinalAnswer sessionId={m.session.id} onPreview={mobile.active||work.archived_at?undefined:()=>setShowPreview(true)}/>}
           {isOpen(m.id)&&<SessionView sessionId={m.session.id} status={m.session.status} embedded onChange={()=>{void refresh();onChange()}}/>}
         </div>}
       </li>)}
@@ -403,6 +443,11 @@ export function WorkView({workId,onChange}:{workId:string;onChange:()=>void}){
       </li>}
     </ol>
 
+    <div className={`work-status ${state}`} role="status" aria-live="polite">
+      <span className="d" aria-hidden="true"/><strong>{statusText}</strong>
+      {state==='running'&&work.latest_session&&<RunLive sessionId={work.latest_session.id} status="RUNNING"/>}
+      {canResume(state)&&!mobile.active&&canCommand()&&<button type="button" className="btn small primary" disabled={busy||!!pending||!sel?.preview||(work.blocked_reason==='needs_review_decision'&&!outcome)} onClick={()=>void resumeWork()}>{t('work.status.resume')}</button>}
+    </div>
     {!canCommand()?<p className="muted small">{t('work.phoneReadOnly')}</p>:work.archived_at?<p className="notice">{t('work.archivedNotice')}</p>:
     <form className="composer" aria-label={messages.length?t('work.followUpMessage'):t('work.firstTask')} onSubmit={e=>{e.preventDefault();submit()}}>
       {(lastSeq!==null||work.pending_messages>0)&&<div className="composer-context">
@@ -414,8 +459,9 @@ export function WorkView({workId,onChange}:{workId:string;onChange:()=>void}){
         {loopLine(preview.policy.loop)&&<p className="chain-note">{loopLine(preview.policy.loop)}</p>}
         <label className="accept-row"><input type="checkbox" checked={accepted} onChange={e=>setAcceptedFor(e.target.checked?preview.digest:null)}/> {t('work.acceptTeam')}</label></div>}
       {policy&&preview&&missingProvider(policy,preview.policy)&&<p className="notice">{t('work.missingProviderNotice')}</p>}
-      {selectedRecipe&&<div className="composer-context">
-        <span className="pill idle">{t('work.cmd.recipe',{title:selectedRecipe.title})} <button type="button" className="icon-btn inline" disabled={!!pending} aria-label={t('work.removeRecipe')} title={t('work.removeRecipe')} onClick={()=>setRecipe(null)}>×</button></span>
+      {(selectedRecipe||readOnly)&&<div className="composer-context">
+        {selectedRecipe&&<span className="pill idle">{t('work.cmd.recipe',{title:selectedRecipe.title})} <button type="button" className="icon-btn inline" disabled={!!pending} aria-label={t('work.removeRecipe')} title={t('work.removeRecipe')} onClick={()=>setRecipe(null)}>×</button></span>}
+        {readOnly&&<span className="pill idle" title={t('work.readOnlyBody')}>{t('work.readOnlyPill')} <button type="button" className="icon-btn inline" disabled={!!pending} aria-label={t('work.removeReadOnly')} title={t('work.removeReadOnly')} onClick={()=>setReadOnly(false)}>×</button></span>}
       </div>}
       <div className="composer-input">
         <label htmlFor="composer" className="sr-only">{messages.length?t('work.followUpMessage'):t('work.firstTask')}</label>
@@ -434,5 +480,21 @@ export function WorkView({workId,onChange}:{workId:string;onChange:()=>void}){
         <p className="hint" id="composer-hint">{running?t('work.hintQueued'):(preview?.policy??policy?.policy)?.loop?t('work.hintLoop'):t('work.hintSingle')} {loopLine((preview?.policy??policy?.policy)?.loop)} {t('work.hintShortcut')}</p>
       </div>
     </form>}
+  </div>
+    {side&&<aside className="preview-side" aria-label={t('tools.preview.title')}><PreviewPanel workspacePath={work.workspace_path} onClose={()=>setShowPreview(false)}/></aside>}
+  </div>
+}
+
+/** K-060: a run stopped because an account is signed out — which account, sign in from here, then continue. */
+function AuthNeeded({base,sessionId,onDone}:{base:string;sessionId:string;onDone:()=>void}){
+  const [busy,setBusy]=useState(false),[error,setError]=useState('')
+  const own=/^(agy@|codex(@|$))/.test(base)   // these sign in from the panel; claude in Claude Code
+  async function resume(){setBusy(true);setError('');try{await api(`/api/sessions/${sessionId}/retry`,{method:'POST'});onDone()}
+    catch(e){setError(say(e))}finally{setBusy(false)}}
+  return <div className="auth-needed notice" role="status">
+    <span>{t(own?'work.auth.needed':'work.auth.neededOther',{base})}</span>
+    {!mobile.active&&own&&<SignIn base={base} compact/>}
+    <div>{!mobile.active&&<button type="button" className="btn small" disabled={busy} aria-busy={busy} onClick={()=>void resume()}>{busy?'…':t('work.auth.continue')}</button>}</div>
+    {error&&<span className="error-banner" role="alert">{error}</span>}
   </div>
 }
